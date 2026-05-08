@@ -1,0 +1,1393 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TikTok 女装选品上架助手 v2</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4f6f8;
+      --surface: #ffffff;
+      --surface-soft: #f8fafc;
+      --line: #dbe3eb;
+      --line-strong: #b8c4d2;
+      --text: #16212f;
+      --muted: #657384;
+      --primary: #0f766e;
+      --primary-dark: #115e59;
+      --green: #067647;
+      --green-bg: #ecfdf3;
+      --yellow: #b54708;
+      --yellow-bg: #fffaeb;
+      --red: #b42318;
+      --red-bg: #fef3f2;
+      --blue: #175cd3;
+      --blue-bg: #eef4ff;
+      --shadow: 0 12px 30px rgba(16, 24, 40, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+
+    button, input, textarea, select { font: inherit; }
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .page {
+      max-width: 1360px;
+      margin: 0 auto;
+      padding: 28px 20px 44px;
+    }
+
+    .topbar {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 20px;
+      align-items: start;
+      margin-bottom: 18px;
+    }
+
+    .title h1 {
+      margin: 0;
+      font-size: clamp(24px, 3vw, 36px);
+      line-height: 1.18;
+      letter-spacing: 0;
+    }
+
+    .title p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .rate-box {
+      display: grid;
+      grid-template-columns: auto 92px auto;
+      gap: 8px;
+      align-items: center;
+      padding: 10px 12px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      white-space: nowrap;
+    }
+
+    .rate-box input {
+      width: 92px;
+      padding: 8px 10px;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      text-align: right;
+    }
+
+    .import-panel,
+    .toolbar,
+    .summary {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    .import-panel {
+      display: grid;
+      grid-template-columns: minmax(260px, 360px) minmax(0, 1fr);
+      gap: 18px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+
+    .field {
+      display: grid;
+      gap: 8px;
+      align-content: start;
+    }
+
+    .field label,
+    .control label {
+      font-size: 12px;
+      font-weight: 800;
+      color: #314155;
+    }
+
+    .file-zone {
+      min-height: 154px;
+      display: grid;
+      gap: 12px;
+      place-items: center;
+      text-align: center;
+      padding: 18px;
+      border: 1px dashed var(--line-strong);
+      border-radius: 8px;
+      background: var(--surface-soft);
+    }
+
+    .file-zone input {
+      width: 100%;
+      max-width: 280px;
+    }
+
+    .hint,
+    .status {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .status.error { color: var(--red); font-weight: 800; }
+    .status.ok { color: var(--green); font-weight: 800; }
+
+    textarea {
+      width: 100%;
+      min-height: 154px;
+      resize: vertical;
+      padding: 12px;
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .actions {
+      grid-column: 1 / -1;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .btn {
+      border: 1px solid transparent;
+      border-radius: 7px;
+      padding: 9px 14px;
+      cursor: pointer;
+      font-weight: 800;
+      min-height: 40px;
+      background: #eef2f6;
+      color: #273445;
+    }
+
+    .btn.primary { background: var(--primary); color: #fff; }
+    .btn.primary:hover { background: var(--primary-dark); }
+    .btn.secondary { border-color: var(--line-strong); background: #fff; }
+    .btn.copy { min-height: 32px; padding: 6px 9px; font-size: 12px; background: #fff; border-color: var(--line-strong); }
+    .btn.copy.done { border-color: var(--green); color: var(--green); }
+
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 1px;
+      overflow: hidden;
+      margin-bottom: 16px;
+      background: var(--line);
+      border-color: #cad6e2;
+    }
+
+    .metric {
+      background: linear-gradient(180deg, #ffffff, #f7fafc);
+      padding: 16px 14px;
+      min-height: 88px;
+      border-top: 4px solid var(--primary);
+    }
+
+    .metric.risk { border-top-color: var(--red); }
+    .metric.warn { border-top-color: var(--yellow); }
+    .metric.good { border-top-color: var(--green); }
+
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 6px;
+      font-weight: 700;
+    }
+
+    .metric strong {
+      font-size: 25px;
+      line-height: 1.1;
+    }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: end;
+      padding: 14px;
+      margin-bottom: 16px;
+    }
+
+    .control {
+      display: grid;
+      gap: 6px;
+    }
+
+    select,
+    .search-input {
+      height: 38px;
+      min-width: 170px;
+      padding: 7px 10px;
+      border: 1px solid var(--line-strong);
+      border-radius: 7px;
+      background: #fff;
+    }
+
+    .checks {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      padding-bottom: 2px;
+    }
+
+    .check-pill {
+      display: inline-flex;
+      gap: 7px;
+      align-items: center;
+      min-height: 38px;
+      padding: 7px 10px;
+      border: 1px solid var(--line-strong);
+      border-radius: 7px;
+      background: #fff;
+      cursor: pointer;
+      user-select: none;
+      font-size: 14px;
+    }
+
+    .count-note {
+      margin-left: auto;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .empty {
+      display: grid;
+      place-items: center;
+      min-height: 220px;
+      border: 1px dashed var(--line-strong);
+      border-radius: 8px;
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.65);
+      text-align: center;
+      padding: 24px;
+    }
+
+    .product-list {
+      display: grid;
+      gap: 14px;
+    }
+
+    .product-card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-left: 8px solid var(--line-strong);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .product-card.level-priority { border-left-color: var(--green); }
+    .product-card.level-check { border-left-color: var(--yellow); }
+    .product-card.level-caution { border-left-color: #d97706; }
+    .product-card.level-stop { border-left-color: var(--red); }
+
+    .card-main {
+      display: grid;
+      grid-template-columns: 120px minmax(0, 1fr) 282px;
+      gap: 16px;
+      padding: 16px;
+    }
+
+    .thumb {
+      width: 120px;
+      aspect-ratio: 1 / 1;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      object-fit: cover;
+      background: #eef2f6;
+    }
+
+    .thumb-placeholder {
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .product-title {
+      margin: 0 0 8px;
+      font-size: 18px;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+    }
+
+    .copy-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin: 0 0 12px;
+    }
+
+    .tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 800;
+      background: var(--blue-bg);
+      color: var(--blue);
+    }
+
+    .tag.priority,
+    .tag.green { background: var(--green-bg); color: var(--green); }
+    .tag.risk,
+    .tag.red,
+    .tag.missing { background: var(--red-bg); color: var(--red); }
+    .tag.warn,
+    .tag.complex,
+    .tag.yellow { background: var(--yellow-bg); color: var(--yellow); }
+
+    .alert {
+      margin: 0 0 12px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid #fda29b;
+      background: var(--red-bg);
+      color: var(--red);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .title-quality {
+      margin: 0 0 12px;
+      padding: 9px 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface-soft);
+      font-size: 13px;
+      color: #344054;
+    }
+
+    .facts {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(120px, 1fr));
+      gap: 8px;
+    }
+
+    .fact {
+      min-height: 56px;
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: var(--surface-soft);
+    }
+
+    .fact span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 2px;
+    }
+
+    .fact strong {
+      font-size: 14px;
+      overflow-wrap: anywhere;
+    }
+
+    .side {
+      display: grid;
+      gap: 10px;
+      align-content: start;
+    }
+
+    .score {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 10px;
+      align-items: center;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface-soft);
+    }
+
+    .score-num {
+      display: grid;
+      place-items: center;
+      width: 58px;
+      height: 58px;
+      border-radius: 50%;
+      background: #e6f4f1;
+      color: var(--primary-dark);
+      font-size: 22px;
+      font-weight: 900;
+    }
+
+    .score.level-check .score-num { background: var(--yellow-bg); color: var(--yellow); }
+    .score.level-caution .score-num { background: #fff7ed; color: #c2410c; }
+    .score.level-stop .score-num { background: var(--red-bg); color: var(--red); }
+
+    .score-level { font-weight: 900; }
+
+    .shipping {
+      display: grid;
+      gap: 4px;
+      padding: 10px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #fff;
+      font-size: 13px;
+    }
+
+    .shipping strong { color: var(--text); }
+    .shipping .danger { color: var(--red); font-weight: 900; }
+
+    .advice {
+      margin: 0;
+      padding-left: 18px;
+      color: #384556;
+      font-size: 13px;
+    }
+
+    .advice li { margin: 3px 0; }
+
+    .card-footer {
+      border-top: 1px solid var(--line);
+      background: var(--surface-soft);
+    }
+
+    details summary {
+      cursor: pointer;
+      padding: 12px 16px;
+      font-weight: 900;
+      color: #263544;
+    }
+
+    .sku-wrap {
+      overflow-x: auto;
+      padding: 0 16px 16px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 760px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    th, td {
+      padding: 9px 10px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      font-size: 13px;
+      vertical-align: top;
+    }
+
+    th {
+      background: #eef2f6;
+      color: #304052;
+      white-space: nowrap;
+    }
+
+    tr:last-child td { border-bottom: 0; }
+    .muted { color: var(--muted); }
+
+    @media (max-width: 1120px) {
+      .summary { grid-template-columns: repeat(4, minmax(120px, 1fr)); }
+      .card-main { grid-template-columns: 100px minmax(0, 1fr); }
+      .side { grid-column: 1 / -1; grid-template-columns: 280px minmax(0, 1fr); }
+      .thumb { width: 100px; }
+    }
+
+    @media (max-width: 760px) {
+      .page { padding: 18px 12px 32px; }
+      .topbar,
+      .import-panel,
+      .card-main,
+      .side { grid-template-columns: 1fr; }
+      .rate-box { justify-content: start; box-shadow: none; }
+      .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .thumb { width: 96px; }
+      .count-note { width: 100%; margin-left: 0; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="topbar">
+      <div class="title">
+        <h1>TikTok 女装选品上架助手</h1>
+        <p>CSV 解析 / SKU 聚合 / 运费风险 / 马来西亚女装上架检查</p>
+      </div>
+      <label class="rate-box">
+        <span>1 USD =</span>
+        <input id="exchangeRate" type="number" min="0" step="0.01" value="4.7">
+        <span>MYR</span>
+      </label>
+    </section>
+
+    <section class="import-panel">
+      <div class="field">
+        <label for="csvFile">上传 CSV 文件</label>
+        <div class="file-zone">
+          <input id="csvFile" type="file" accept=".csv,text/csv">
+          <p class="hint">优先支持 UTF-8，并会尝试识别 GBK / GB18030。如果仍乱码，请另存为 CSV UTF-8 再上传。</p>
+        </div>
+      </div>
+      <div class="field">
+        <label for="csvText">粘贴 CSV 文本</label>
+        <textarea id="csvText" placeholder="把 TikTok 商品 CSV 内容粘贴到这里"></textarea>
+      </div>
+      <div class="actions">
+        <button class="btn primary" id="parseBtn" type="button">解析 CSV</button>
+        <button class="btn secondary" id="clearBtn" type="button">清空</button>
+        <span class="status" id="status">数据仅在浏览器本地处理，不上传服务器。CSV 解析器已内置，断网也可使用。</span>
+      </div>
+    </section>
+
+    <section class="summary" id="summary" aria-label="汇总看板"></section>
+
+    <section class="toolbar">
+      <div class="control">
+        <label for="sortBy">排序</label>
+        <select id="sortBy">
+          <option value="score">按推荐分排序</option>
+          <option value="weight">按重量排序</option>
+          <option value="price">按价格排序</option>
+        </select>
+      </div>
+      <div class="control">
+        <label for="searchBox">搜索</label>
+        <input class="search-input" id="searchBox" type="search" placeholder="标题 / SKU / 产品ID">
+      </div>
+      <div class="checks" aria-label="筛选">
+        <label class="check-pill"><input id="onlyPriority" type="checkbox">只看优先测试</label>
+        <label class="check-pill"><input id="onlyWeightRisk" type="checkbox">只看重量风险</label>
+        <label class="check-pill"><input id="onlyMissing" type="checkbox">只看信息缺失</label>
+        <label class="check-pill"><input id="onlyWeightError" type="checkbox">只看疑似重量填错</label>
+        <label class="check-pill"><input id="onlyAbnormal" type="checkbox">只看异常项</label>
+      </div>
+      <span class="count-note" id="countNote">未导入数据</span>
+    </section>
+
+    <section class="product-list" id="productList">
+      <div class="empty">
+        <div>
+          <strong>等待导入 CSV</strong>
+          <p class="hint">上传文件或粘贴 CSV 文本后点击解析。</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    window.Papa = window.Papa || {
+      parse(csvText, options = {}) {
+        const delimiter = detectDelimiter(csvText);
+        const rows = parseDelimitedRows(String(csvText || ''), delimiter);
+        const errors = [];
+        if (!options.header) return { data: rows, errors, meta: { delimiter } };
+
+        const rawHeaders = rows.shift() || [];
+        const headers = rawHeaders.map((header) => {
+          const cleaned = stripBom(String(header || '')).trim();
+          return options.transformHeader ? options.transformHeader(cleaned) : cleaned;
+        });
+
+        const data = rows
+          .filter((row) => options.skipEmptyLines !== 'greedy' || row.some((cell) => String(cell || '').trim()))
+          .map((row) => {
+            const item = {};
+            headers.forEach((header, index) => {
+              if (!header) return;
+              item[header] = row[index] ?? '';
+            });
+            return item;
+          });
+
+        return { data, errors, meta: { delimiter, fields: headers } };
+      }
+    };
+
+    function detectDelimiter(text) {
+      const firstLine = String(text || '').split(/\r?\n/).find((line) => line.trim()) || '';
+      const candidates = [',', '\t', ';'];
+      return candidates
+        .map((delimiter) => ({ delimiter, count: firstLine.split(delimiter).length }))
+        .sort((a, b) => b.count - a.count)[0].delimiter;
+    }
+
+    function parseDelimitedRows(text, delimiter) {
+      const rows = [];
+      let row = [];
+      let cell = '';
+      let inQuotes = false;
+
+      for (let i = 0; i < text.length; i += 1) {
+        const char = text[i];
+        const next = text[i + 1];
+        if (char === '"') {
+          if (inQuotes && next === '"') {
+            cell += '"';
+            i += 1;
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if (char === delimiter && !inQuotes) {
+          row.push(cell);
+          cell = '';
+        } else if ((char === '\n' || char === '\r') && !inQuotes) {
+          if (char === '\r' && next === '\n') i += 1;
+          row.push(cell);
+          rows.push(row);
+          row = [];
+          cell = '';
+        } else {
+          cell += char;
+        }
+      }
+
+      row.push(cell);
+      if (row.length > 1 || row[0].trim()) rows.push(row);
+      return rows;
+    }
+
+    function stripBom(text) {
+      return String(text || '').replace(/^\uFEFF/, '');
+    }
+
+    const els = {
+      file: document.getElementById('csvFile'),
+      text: document.getElementById('csvText'),
+      parse: document.getElementById('parseBtn'),
+      clear: document.getElementById('clearBtn'),
+      status: document.getElementById('status'),
+      summary: document.getElementById('summary'),
+      list: document.getElementById('productList'),
+      rate: document.getElementById('exchangeRate'),
+      sort: document.getElementById('sortBy'),
+      priority: document.getElementById('onlyPriority'),
+      weightRisk: document.getElementById('onlyWeightRisk'),
+      missing: document.getElementById('onlyMissing'),
+      weightError: document.getElementById('onlyWeightError'),
+      abnormal: document.getElementById('onlyAbnormal'),
+      search: document.getElementById('searchBox'),
+      count: document.getElementById('countNote')
+    };
+
+    const state = { rows: [], products: [] };
+
+    const SUMMER_KEYWORDS = ['nipis', 'musim panas', 'pelindung matahari', 'ringan', 'breathable', 'sun protection', 'thin', 'lightweight', 'cooling', '透气', '轻薄', '防晒', '夏季', '凉感'];
+    const LIGHT_CLOTHES_KEYWORDS = ['t-shirt', 'baju-t', 'tee', 'nipis', 'ringan', 'thin', '薄', '轻薄', '透气', '短袖'];
+    const COMMUTE_KEYWORDS = ['office', 'work', 'kerja', 'formal', 'blouse', 'shirt', 'suit', '通勤', '上班', '衬衫', '西装'];
+    const HOME_KEYWORDS = ['home', 'rumah', 'pajama', 'sleepwear', 'loungewear', 'casual', '居家', '睡衣', '家居', '休闲'];
+    const LIVE_KEYWORDS = ['set', 'viral', 'new', 'hot', 'slimming', 'plus size', '显瘦', '套装', '爆款', '新款', '遮肉'];
+    const VIDEO_KEYWORDS = ['sun protection', 'uv', 'cooling', 'breathable', 'slimming', '显瘦', '防晒', '透气', '凉感', '遮肉'];
+    const LOCAL_MARKET_KEYWORDS = ['malaysia', 'my', 'muslimah', 'hijab', 'baju', 'kurung', 'raya', 'musim panas', 'nipis', 'ringan', '马来西亚'];
+    const MACHINE_TRANSLATION_PATTERNS = [/women women/i, /fashion female/i, /explosion models/i, /foreign trade/i, /cross-border/i, /女士女/i, /女的/i, /外贸/i, /跨境/i, /爆款款/i];
+
+    const fieldNames = {
+      categoryId: ['分类id'],
+      title: ['产品标题'],
+      description: ['Tiktok产品描述', 'TikTok产品描述'],
+      brand: ['品牌'],
+      sku: ['sku', 'SKU'],
+      variant1: ['变种属性值一'],
+      variant2: ['变种属性值二'],
+      variant3: ['变种属性值三'],
+      price: ['价格(站点币种)'],
+      localPrice: ['本地展示价'],
+      stock: ['库存'],
+      mainImage: ['主图(url)地址'],
+      weight: ['重量(kg)'],
+      length: ['长'],
+      width: ['宽'],
+      height: ['高'],
+      warehouse: ['仓库名称'],
+      cod: ['货到付款'],
+      sourceUrl: ['来源Url', '来源URL', '来源url'],
+      shopName: ['店铺名'],
+      productId: ['产品id'],
+      currency: ['店铺币种'],
+      publishTime: ['平台刊登时间']
+    };
+
+    function value(row, key) {
+      const names = fieldNames[key] || [key];
+      for (const name of names) {
+        if (Object.prototype.hasOwnProperty.call(row, name)) return String(row[name] ?? '').trim();
+      }
+      return '';
+    }
+
+    function cleanNumberText(input) {
+      return String(input ?? '')
+        .replace(/\u00A0/g, ' ')
+        .replace(/[，]/g, ',')
+        .replace(/[－–—]/g, '-')
+        .replace(/\s+/g, '')
+        .trim();
+    }
+
+    function toNumber(input) {
+      const text = cleanNumberText(input);
+      if (!text || /^[-/\\na|null|undefined]+$/i.test(text)) return null;
+      const normalized = text.replace(/,/g, '').replace(/[^\d.-]/g, '');
+      const match = normalized.match(/-?\d+(?:\.\d+)?/);
+      if (!match) return null;
+      const num = Number(match[0]);
+      return Number.isFinite(num) ? num : null;
+    }
+
+    function cleanPrice(input) {
+      const num = toNumber(input);
+      if (num === null || num < 0 || num > 100000) return null;
+      return num;
+    }
+
+    function formatNum(num, digits = 2) {
+      if (num === null || num === undefined || !Number.isFinite(num)) return '-';
+      if (digits === 0) return String(Math.round(Number(num)));
+      return Number(num).toFixed(digits).replace(/\.?0+$/, '');
+    }
+
+    function moneyRange(values, currency = '') {
+      const nums = values.map(cleanPrice).filter((n) => n !== null);
+      if (!nums.length) return '-';
+      const min = Math.min(...nums);
+      const max = Math.max(...nums);
+      const suffix = currency ? ` ${escapeHtml(currency)}` : '';
+      if (min === max) return `${formatNum(min)}${suffix}`;
+      return `${formatNum(min)} - ${formatNum(max)}${suffix}`;
+    }
+
+    function numericRange(values, unit = '') {
+      const nums = values.map(toNumber).filter((n) => n !== null);
+      if (!nums.length) return '-';
+      const min = Math.min(...nums);
+      const max = Math.max(...nums);
+      if (min === max) return `${formatNum(min, 3)}${unit}`;
+      return `${formatNum(min, 3)} - ${formatNum(max, 3)}${unit}`;
+    }
+
+    function escapeHtml(input) {
+      return String(input ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function hasAnyKeyword(text, keywords) {
+      const haystack = String(text || '').toLowerCase();
+      return keywords.some((word) => haystack.includes(word.toLowerCase()));
+    }
+
+    function extraShippingUsd(weight) {
+      if (weight === null || weight === undefined) return null;
+      if (weight <= 0.5) return 0;
+      if (weight <= 1) return 4.5;
+      if (weight <= 1.5) return 9;
+      if (weight <= 2) return 13.5;
+      if (weight <= 2.5) return 18;
+      if (weight <= 3) return 22.5;
+      return 22.5;
+    }
+
+    function scoreLevel(score) {
+      if (score >= 80) return '优先测试';
+      if (score >= 60) return '可测试但需检查';
+      if (score >= 40) return '谨慎上架';
+      return '暂缓上架';
+    }
+
+    function levelClass(level) {
+      if (level === '优先测试') return 'level-priority';
+      if (level === '可测试但需检查') return 'level-check';
+      if (level === '谨慎上架') return 'level-caution';
+      return 'level-stop';
+    }
+
+    function tagClass(label) {
+      if (label === '优先测试' || label === '适合炎热天气' || label === '适合通勤' || label === '适合居家') return 'green';
+      if (label === '重量风险' || label === '信息缺失' || label === '疑似重量填错' || label === '重量异常' || label === '尺寸异常' || label === '价格异常') return 'red';
+      if (label === 'SKU复杂' || label === '价格偏高') return 'yellow';
+      return '';
+    }
+
+    function parseCsvText(csvText) {
+      return Papa.parse(csvText, {
+        header: true,
+        skipEmptyLines: 'greedy',
+        transformHeader: (header) => String(header || '').trim()
+      });
+    }
+
+    function looksLikeEncodingIssue(text) {
+      const sample = String(text || '').slice(0, 1500);
+      const badCount = (sample.match(/\uFFFD/g) || []).length;
+      const mojibakeCount = (sample.match(/[锟斤拷ÃÂ¤åæœ€°]/g) || []).length;
+      return badCount >= 2 || mojibakeCount >= 6;
+    }
+
+    async function readSelectedFile() {
+      const file = els.file.files && els.file.files[0];
+      if (!file) return { text: '', encoding: '' };
+      const buffer = await file.arrayBuffer();
+      const utf8Text = new TextDecoder('utf-8', { fatal: false }).decode(buffer);
+      if (!looksLikeEncodingIssue(utf8Text)) return { text: utf8Text, encoding: 'UTF-8' };
+
+      for (const encoding of ['gb18030', 'gbk']) {
+        try {
+          const decoded = new TextDecoder(encoding, { fatal: false }).decode(buffer);
+          if (!looksLikeEncodingIssue(decoded)) return { text: decoded, encoding: encoding.toUpperCase() };
+        } catch (error) {
+          continue;
+        }
+      }
+
+      return { text: utf8Text, encoding: '可能乱码' };
+    }
+
+    function assessTitle(title, description) {
+      const text = `${title || ''} ${description || ''}`;
+      const titleText = String(title || '').trim();
+      const issues = [];
+      const suggestions = [];
+      const tooLong = titleText.length > 100 || titleText.split(/\s+/).filter(Boolean).length > 18;
+      const machineTranslated = MACHINE_TRANSLATION_PATTERNS.some((pattern) => pattern.test(titleText)) || /[\u4e00-\u9fa5]{12,}/.test(titleText);
+      const localFit = hasAnyKeyword(text, LOCAL_MARKET_KEYWORDS) || hasAnyKeyword(text, SUMMER_KEYWORDS);
+      const hasSellingPoint = hasAnyKeyword(text, [...SUMMER_KEYWORDS, ...COMMUTE_KEYWORDS, ...HOME_KEYWORDS, ...LIVE_KEYWORDS, ...VIDEO_KEYWORDS]);
+
+      if (tooLong) issues.push('标题过长');
+      if (machineTranslated) issues.push('标题明显机翻');
+      if (!localFit) issues.push('标题不适合马来西亚市场');
+      if (!hasSellingPoint) issues.push('标题缺少卖点');
+
+      if (localFit && hasSellingPoint && !tooLong && !machineTranslated) suggestions.push('适合本地市场');
+      if (!localFit || machineTranslated || !hasSellingPoint) suggestions.push('建议本地化');
+      if (tooLong) {
+        suggestions.push('标题过长，建议压到 80 字以内');
+        suggestions.push('保留核心卖点：轻薄 / 防晒 / 显瘦 / 夏季 / 宽松');
+        suggestions.push('删除重复堆词和废话词');
+      }
+
+      return {
+        issues,
+        suggestions,
+        tooLong,
+        machineTranslated,
+        localFit,
+        hasSellingPoint,
+        summary: suggestions.length ? suggestions.join(' / ') : '建议本地化'
+      };
+    }
+
+    function aggregateRows(rows) {
+      const groups = new Map();
+      rows.forEach((row, index) => {
+        const productId = value(row, 'productId');
+        const categoryId = value(row, 'categoryId');
+        const title = value(row, 'title');
+        const key = productId || `${categoryId}::${title}` || `row-${index}`;
+
+        if (!groups.has(key)) {
+          groups.set(key, {
+            key,
+            rows: [],
+            title,
+            categoryId,
+            productId,
+            description: value(row, 'description'),
+            mainImage: value(row, 'mainImage'),
+            warehouse: value(row, 'warehouse'),
+            cod: value(row, 'cod'),
+            sourceUrl: value(row, 'sourceUrl'),
+            shopName: value(row, 'shopName'),
+            currency: value(row, 'currency'),
+            publishTime: value(row, 'publishTime')
+          });
+        }
+
+        const product = groups.get(key);
+        product.rows.push(row);
+        product.title = product.title || title;
+        product.categoryId = product.categoryId || categoryId;
+        product.productId = product.productId || productId;
+        product.description = product.description || value(row, 'description');
+        product.mainImage = product.mainImage || value(row, 'mainImage');
+        product.warehouse = product.warehouse || value(row, 'warehouse');
+        product.cod = product.cod || value(row, 'cod');
+        product.sourceUrl = product.sourceUrl || value(row, 'sourceUrl');
+        product.shopName = product.shopName || value(row, 'shopName');
+        product.currency = product.currency || value(row, 'currency');
+        product.publishTime = product.publishTime || value(row, 'publishTime');
+      });
+      return [...groups.values()].map(enrichProduct);
+    }
+
+    function enrichProduct(product) {
+      const prices = product.rows.map((row) => value(row, 'price'));
+      const localPrices = product.rows.map((row) => value(row, 'localPrice'));
+      const stocks = product.rows.map((row) => toNumber(value(row, 'stock')) || 0);
+      const weightValues = product.rows.map((row) => toNumber(value(row, 'weight')));
+      const lengthValues = product.rows.map((row) => toNumber(value(row, 'length')));
+      const widthValues = product.rows.map((row) => toNumber(value(row, 'width')));
+      const heightValues = product.rows.map((row) => toNumber(value(row, 'height')));
+      const priceNums = prices.map(cleanPrice).filter((n) => n !== null);
+      const localPriceNums = localPrices.map(cleanPrice).filter((n) => n !== null);
+      const text = `${product.title} ${product.description}`;
+      const weight = weightValues.filter((n) => n !== null && n > 0).length ? Math.max(...weightValues.filter((n) => n !== null && n > 0)) : 0;
+      const skuCount = product.rows.length;
+      const hasMainImage = Boolean(product.mainImage);
+      const hasPrice = priceNums.length > 0 || localPriceNums.length > 0;
+      const hasWeight = weightValues.some((n) => n !== null);
+      const hasSource = Boolean(product.sourceUrl);
+      const summerMatch = hasAnyKeyword(text, SUMMER_KEYWORDS);
+      const titleQuality = assessTitle(product.title, product.description);
+      const weightAnomaly = weightValues.some((n) => n === null || n <= 0);
+      const dimensionAnomaly = [lengthValues, widthValues, heightValues].some((list) => list.some((n) => n === null || n <= 0));
+      const priceAnomaly = product.rows.some((row) => {
+        const raw = value(row, 'price');
+        return raw && cleanPrice(raw) === null;
+      });
+      const suspectedWeightError = hasAnyKeyword(text, LIGHT_CLOTHES_KEYWORDS) && weight > 0 && weight >= 0.8;
+      const missingInfo = !hasMainImage || !hasPrice || !hasWeight || !hasSource;
+      const minPrice = localPriceNums.length ? Math.min(...localPriceNums) : priceNums.length ? Math.min(...priceNums) : null;
+      const maxPrice = localPriceNums.length ? Math.max(...localPriceNums) : priceNums.length ? Math.max(...priceNums) : null;
+      const highPrice = maxPrice !== null && maxPrice > 100;
+      const shippingUsd = extraShippingUsd(weight);
+      const shippingProfitRisk = weight !== null && weight > 0.5 && minPrice !== null && minPrice < 35;
+      const tags = [];
+      const hasAnyAbnormal = weightAnomaly || dimensionAnomaly || priceAnomaly || suspectedWeightError || missingInfo || skuCount > 8 || highPrice || shippingProfitRisk || titleQuality.issues.length > 0;
+
+      if (weightAnomaly) tags.push('重量异常');
+      if (dimensionAnomaly) tags.push('尺寸异常');
+      if (priceAnomaly) tags.push('价格异常');
+      if (!weightAnomaly && weight > 0.5) tags.push('重量风险');
+      if (suspectedWeightError) tags.push('疑似重量填错');
+      if (skuCount > 8) tags.push('SKU复杂');
+      if (missingInfo) tags.push('信息缺失');
+      if (highPrice) tags.push('价格偏高');
+      if (summerMatch) tags.push('适合炎热天气');
+      if (hasAnyKeyword(text, COMMUTE_KEYWORDS)) tags.push('适合通勤');
+      if (hasAnyKeyword(text, HOME_KEYWORDS)) tags.push('适合居家');
+      if (minPrice !== null && minPrice <= 25 && weight > 0 && weight <= 0.5) tags.push('适合引流款');
+      if (hasAnyKeyword(text, LIVE_KEYWORDS) || skuCount <= 4) tags.push('适合直播口播');
+      if (hasAnyKeyword(text, VIDEO_KEYWORDS) || suspectedWeightError || summerMatch) tags.push('适合短视频开场');
+
+      let score = 60;
+      if (weight > 0 && weight <= 0.5 && !weightAnomaly && !dimensionAnomaly && !priceAnomaly) score += 15;
+      if (skuCount <= 6) score += 10;
+      if (hasMainImage) score += 5;
+      if (hasSource) score += 5;
+      if (summerMatch) score += 5;
+      if (weight > 0.5) score -= 20;
+      if (suspectedWeightError) score -= 15;
+      if (skuCount > 8) score -= 10;
+      if (missingInfo) score -= 20;
+      if (titleQuality.tooLong) score -= 6;
+      if (titleQuality.machineTranslated) score -= 6;
+      if (!titleQuality.localFit) score -= 4;
+      if (!titleQuality.hasSellingPoint) score -= 4;
+      if (highPrice) score -= 5;
+      if (weightAnomaly) score -= 20;
+      if (dimensionAnomaly) score -= 15;
+      if (priceAnomaly) score -= 15;
+      score = Math.max(0, Math.min(100, score));
+
+      const stockTotal = stocks.reduce((sum, n) => sum + n, 0);
+      let level = scoreLevel(score);
+      if (hasAnyAbnormal) {
+        level = score >= 60 ? '可测试但需检查' : '暂缓上架';
+      }
+      if (weightAnomaly) {
+        level = score >= 60 ? '可测试但需检查' : '暂缓上架';
+      }
+
+      return {
+        ...product,
+        skuCount,
+        prices,
+        localPrices,
+        priceRange: moneyRange(prices, product.currency),
+        localPriceRange: moneyRange(localPrices, product.currency),
+        minPrice,
+        maxPrice,
+        highPrice,
+        stockTotal,
+        weight,
+        weightDisplay: numericRange(product.rows.map((row) => value(row, 'weight')), 'kg'),
+        sizeDisplay: `${numericRange(product.rows.map((row) => value(row, 'length')), 'cm')} x ${numericRange(product.rows.map((row) => value(row, 'width')), 'cm')} x ${numericRange(product.rows.map((row) => value(row, 'height')), 'cm')}`,
+        tags: [...new Set(tags)],
+        score,
+        level,
+        shippingUsd,
+        summerMatch,
+        titleQuality,
+        suspectedWeightError,
+        weightAnomaly,
+        dimensionAnomaly,
+        priceAnomaly,
+        shippingProfitRisk,
+        missingInfo,
+        abnormal: hasAnyAbnormal,
+        hasMainImage,
+        hasPrice,
+        hasWeight,
+        hasSource
+      };
+    }
+
+    function checklist(product) {
+      const items = [];
+      if (product.weightAnomaly) {
+        items.push('重量为 0 或异常值，需补齐真实重量。');
+      } else if (product.weight === null) {
+        items.push('重量为空，需补齐重量后再判断运费。');
+      } else if (product.suspectedWeightError) {
+        items.push('核实实际重量，T-shirt、轻薄、透气类商品通常不应达到 0.8kg 以上。');
+      } else {
+        items.push(product.weight > 0.5 ? '重量超过 0.5kg，需确认利润是否覆盖额外运费。' : '重量在 0.5kg 内，运费风险较低。');
+      }
+      if (product.dimensionAnomaly) {
+        items.push('尺寸为 0 或异常值，需补齐真实尺寸。');
+      }
+      items.push(product.shippingUsd && product.shippingUsd > 0 ? `运费会增加 ${formatNum(product.shippingUsd)} USD。` : '暂无额外超重运费。');
+      if (product.shippingProfitRisk) items.push('利润可能被额外运费吃掉。');
+      items.push(product.skuCount > 8 ? 'SKU 过多，建议先精简颜色/尺码测试。' : 'SKU 数量可控。');
+      items.push(product.hasMainImage ? '主图已填写，检查附图和尺码图是否完整。' : '主图缺失，需补图。');
+      if (product.priceAnomaly) items.push('存在无法解析的价格，请检查 SKU 明细。');
+      items.push(product.hasPrice ? '价格已填写，需复核售价、佣金和利润。' : '价格缺失，需补价。');
+      if (product.highPrice) items.push('价格偏高，需确认 TikTok 转化和竞品价格。');
+      items.push(product.stockTotal > 0 ? `库存合计 ${formatNum(product.stockTotal, 0)} 件。` : '库存为 0 或缺失，需确认可售库存。');
+      items.push(product.hasSource ? '来源链接已存在。' : '来源链接缺失，后续补货和核价不方便。');
+      items.push(product.cod ? `货到付款：${product.cod}。` : '货到付款信息缺失，需确认店铺策略。');
+      items.push(product.titleQuality.summary);
+      items.push(product.tags.includes('适合短视频开场') ? '适合 TikTok 短视频开场。' : '短视频开场卖点不够明确。');
+      items.push(product.tags.includes('适合直播口播') ? '适合直播间口播。' : '直播口播点较弱，可补充显瘦、面料、场景卖点。');
+      items.push(product.tags.includes('适合炎热天气') ? '适合马来西亚炎热天气。' : '未明显体现轻薄、透气、防晒等热带卖点。');
+      items.push(product.minPrice !== null && product.minPrice <= 25 ? '适合做低价测试款。' : '低价测试款属性不明显。');
+      items.push(product.tags.includes('适合引流款') ? '适合做引流款。' : '做引流款前需确认售价和运费空间。');
+      return items;
+    }
+
+    function renderSummary(products, rows) {
+      const weights = products.map((p) => p.weight).filter((n) => n !== null);
+      const prices = products.map((p) => p.minPrice).filter((n) => n !== null);
+      const data = [
+        ['产品数', products.length, ''],
+        ['SKU 总数', rows.length, ''],
+        ['优先测试', products.filter((p) => p.level === '优先测试').length, 'good'],
+        ['重量风险', products.filter((p) => p.tags.includes('重量风险')).length, 'risk'],
+        ['疑似重量填错', products.filter((p) => p.suspectedWeightError).length, 'risk'],
+        ['重量异常', products.filter((p) => p.weightAnomaly).length, 'risk'],
+        ['尺寸异常', products.filter((p) => p.dimensionAnomaly).length, 'risk'],
+        ['价格异常', products.filter((p) => p.priceAnomaly).length, 'risk'],
+        ['信息缺失', products.filter((p) => p.missingInfo).length, 'warn'],
+        ['平均重量', weights.length ? `${formatNum(weights.reduce((a, b) => a + b, 0) / weights.length, 3)}kg` : '-', ''],
+        ['平均价格', prices.length ? `${formatNum(prices.reduce((a, b) => a + b, 0) / prices.length)} MYR` : '-', '']
+      ];
+
+      els.summary.innerHTML = data.map(([label, val, cls]) => `
+        <div class="metric ${cls}">
+          <span>${escapeHtml(label)}</span>
+          <strong>${escapeHtml(val)}</strong>
+        </div>
+      `).join('');
+    }
+
+    function filteredProducts() {
+      const query = els.search.value.trim().toLowerCase();
+      const filtered = state.products.filter((product) => {
+        if (els.priority.checked && product.level !== '优先测试') return false;
+        if (els.weightRisk.checked && !product.tags.includes('重量风险')) return false;
+        if (els.missing.checked && !product.missingInfo) return false;
+        if (els.weightError.checked && !product.suspectedWeightError) return false;
+        if (els.abnormal.checked && !product.abnormal) return false;
+        if (!query) return true;
+        const skuText = product.rows.map((row) => value(row, 'sku')).join(' ');
+        const searchable = `${product.title} ${product.productId} ${product.categoryId} ${skuText}`.toLowerCase();
+        return searchable.includes(query);
+      });
+
+      filtered.sort((a, b) => {
+        if (els.sort.value === 'weight') return (b.weight ?? -1) - (a.weight ?? -1);
+        if (els.sort.value === 'price') return (b.minPrice ?? -1) - (a.minPrice ?? -1);
+        return b.score - a.score;
+      });
+      return filtered;
+    }
+
+    function renderProducts() {
+      const products = filteredProducts();
+      els.count.textContent = state.products.length ? `显示 ${products.length} / ${state.products.length} 个产品` : '未导入数据';
+      if (!state.products.length) {
+        els.list.innerHTML = `
+          <div class="empty">
+            <div>
+              <strong>等待导入 CSV</strong>
+              <p class="hint">上传文件或粘贴 CSV 文本后点击解析。</p>
+            </div>
+          </div>`;
+        return;
+      }
+      if (!products.length) {
+        els.list.innerHTML = '<div class="empty">当前筛选条件下没有产品。</div>';
+        return;
+      }
+      const rate = toNumber(els.rate.value) || 4.7;
+      els.list.innerHTML = products.map((product) => renderProductCard(product, rate)).join('');
+    }
+
+    function renderProductCard(product, rate) {
+      const image = product.mainImage
+        ? `<img class="thumb" src="${escapeHtml(product.mainImage)}" alt="${escapeHtml(product.title || '商品主图')}" onerror="this.replaceWith(Object.assign(document.createElement('div'), {className: 'thumb thumb-placeholder', textContent: '图片无法加载'}))">`
+        : '<div class="thumb thumb-placeholder">无主图</div>';
+      const tags = product.tags.length
+        ? product.tags.map((tag) => `<span class="tag ${tagClass(tag)}">${escapeHtml(tag)}</span>`).join('')
+        : '<span class="tag">未标记</span>';
+      const shippingMyr = product.shippingUsd === null ? null : product.shippingUsd * rate;
+      const source = product.sourceUrl
+        ? `<a href="${escapeHtml(product.sourceUrl)}" target="_blank" rel="noopener noreferrer">打开链接</a>`
+        : '-';
+      const skuList = product.rows.map((row) => value(row, 'sku')).filter(Boolean).join('\n');
+      const cardClass = levelClass(product.level);
+      const levelName = cardClass.replace('level-', '');
+      const alert = product.suspectedWeightError
+        ? '<div class="alert">疑似重量填错：轻薄/T-shirt 类商品重量偏高，请优先核实实际重量。</div>'
+        : product.weightAnomaly
+          ? '<div class="alert">重量异常：重量为 0 或异常值，需补齐真实重量。</div>'
+          : product.dimensionAnomaly
+            ? '<div class="alert">尺寸异常：尺寸为 0 或异常值，需补齐真实尺寸。</div>'
+            : product.priceAnomaly
+              ? '<div class="alert">价格异常：存在无法解析的价格，请检查 SKU 明细。</div>'
+        : product.shippingProfitRisk
+          ? '<div class="alert">利润可能被额外运费吃掉：该产品超过 0.5kg 且售价偏低。</div>'
+          : '';
+
+      return `
+        <article class="product-card ${cardClass}">
+          <div class="card-main">
+            ${image}
+            <div>
+              <h2 class="product-title">${escapeHtml(product.title || '未命名产品')}</h2>
+              <div class="copy-row">
+                ${copyButton('复制标题', product.title)}
+                ${copyButton('复制 SKU', skuList)}
+                ${copyButton('复制来源链接', product.sourceUrl)}
+                ${copyButton('复制价格', product.localPriceRange !== '-' ? product.localPriceRange : product.priceRange)}
+                ${copyButton('复制重量', product.weight === null ? '' : `${formatNum(product.weight, 3)}kg`)}
+              </div>
+              <div class="tags">${tags}</div>
+              ${alert}
+              <div class="title-quality">
+                标题质量：<strong>${escapeHtml(product.titleQuality.summary)}</strong>
+                ${product.titleQuality.issues.length ? `；问题：${escapeHtml(product.titleQuality.issues.join('、'))}` : ''}
+              </div>
+              <div class="facts">
+                ${fact('分类id', product.categoryId || '-')}
+                ${fact('产品id', product.productId || '-')}
+                ${fact('SKU 数', `${product.skuCount} 个`)}
+                ${fact('价格区间', product.priceRange)}
+                ${fact('本地展示价', product.localPriceRange)}
+                ${fact('库存总数', `${formatNum(product.stockTotal, 0)} 件`)}
+                ${fact('重量', product.weightDisplay)}
+                ${fact('尺寸 长x宽x高', product.sizeDisplay)}
+                ${fact('仓库名称', product.warehouse || '-')}
+                ${fact('货到付款', product.cod || '-')}
+                ${fact('店铺名', product.shopName || '-')}
+                ${fact('店铺币种', product.currency || '-')}
+                ${fact('来源Url / 1688', source, true)}
+                ${fact('平台刊登时间', product.publishTime || '-')}
+              </div>
+            </div>
+            <aside class="side">
+              <div class="score ${cardClass}">
+                <div class="score-num">${product.score}</div>
+                <div>
+                  <div class="score-level">${escapeHtml(product.level)}</div>
+                  <div class="muted">推荐优先级</div>
+                </div>
+              </div>
+              <div class="shipping">
+                <div>额外运费 USD：<strong>${product.shippingUsd === null ? '-' : `${formatNum(product.shippingUsd)} USD`}</strong></div>
+                <div>额外运费 MYR：<strong>${shippingMyr === null ? '-' : `${formatNum(shippingMyr)} MYR`}</strong></div>
+                <div>是否超过 0.5kg：<strong>${product.weight === null ? '-' : product.weight > 0.5 ? '是' : '否'}</strong></div>
+                ${product.shippingProfitRisk ? '<div class="danger">利润可能被额外运费吃掉</div>' : ''}
+              </div>
+              <ul class="advice">${checklist(product).slice(0, 6).map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
+            </aside>
+          </div>
+          <div class="card-footer">
+            <details>
+              <summary>SKU 明细与完整检查清单</summary>
+              <div class="sku-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>sku</th>
+                      <th>变种属性值一</th>
+                      <th>变种属性值二</th>
+                      <th>变种属性值三</th>
+                      <th>价格</th>
+                      <th>本地展示价</th>
+                      <th>库存</th>
+                      <th>重量</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${product.rows.map((row) => `
+                      <tr>
+                        <td>${escapeHtml(value(row, 'sku') || '-')}</td>
+                        <td>${escapeHtml(value(row, 'variant1') || '-')}</td>
+                        <td>${escapeHtml(value(row, 'variant2') || '-')}</td>
+                        <td>${escapeHtml(value(row, 'variant3') || '-')}</td>
+                        <td>${escapeHtml(value(row, 'price') || '-')}</td>
+                        <td>${escapeHtml(value(row, 'localPrice') || '-')}</td>
+                        <td>${escapeHtml(value(row, 'stock') || '-')}</td>
+                        <td>${escapeHtml(value(row, 'weight') || '-')}</td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+                <ul class="advice" style="margin-top: 12px;">
+                  ${checklist(product).map((item) => `<li>${escapeHtml(item)}</li>`).join('')}
+                </ul>
+              </div>
+            </details>
+          </div>
+        </article>
+      `;
+    }
+
+    function copyButton(label, text) {
+      return `<button class="btn copy" type="button" data-copy="${escapeHtml(text || '')}">${escapeHtml(label)}</button>`;
+    }
+
+    function fact(label, valueText, raw = false) {
+      return `
+        <div class="fact">
+          <span>${escapeHtml(label)}</span>
+          <strong>${raw ? valueText : escapeHtml(valueText)}</strong>
+        </div>`;
+    }
+
+    async function handleParse() {
+      els.status.textContent = '正在读取 CSV...';
+      els.status.className = 'status';
+      try {
+        const pasted = els.text.value.trim();
+        const fileResult = pasted ? { text: '', encoding: '' } : await readSelectedFile();
+        const csvText = pasted || fileResult.text;
+        if (!csvText.trim()) {
+          els.status.textContent = '请先上传 CSV 文件或粘贴 CSV 文本。';
+          els.status.className = 'status error';
+          return;
+        }
+        if (looksLikeEncodingIssue(csvText)) {
+          els.status.textContent = 'CSV 可能仍存在乱码，请另存为 CSV UTF-8 再上传。';
+          els.status.className = 'status error';
+        }
+
+        const result = parseCsvText(csvText);
+        const rows = result.data.filter((row) => Object.values(row).some((cell) => String(cell ?? '').trim()));
+        state.rows = rows;
+        state.products = aggregateRows(rows);
+        renderSummary(state.products, state.rows);
+        renderProducts();
+        const encodingText = fileResult.encoding ? `，识别编码：${fileResult.encoding}` : '';
+        if (!looksLikeEncodingIssue(csvText)) {
+          els.status.textContent = `解析完成：${state.products.length} 个产品，${state.rows.length} 个 SKU${encodingText}。`;
+          els.status.className = 'status ok';
+        }
+      } catch (error) {
+        els.status.textContent = error.message || 'CSV 解析失败。请另存为 CSV UTF-8 再上传。';
+        els.status.className = 'status error';
+      }
+    }
+
+    function resetAll() {
+      els.file.value = '';
+      els.text.value = '';
+      els.search.value = '';
+      els.priority.checked = false;
+      els.weightRisk.checked = false;
+      els.missing.checked = false;
+      els.weightError.checked = false;
+      els.abnormal.checked = false;
+      state.rows = [];
+      state.products = [];
+      renderSummary([], []);
+      renderProducts();
+      els.status.textContent = '数据仅在浏览器本地处理，不上传服务器。CSV 解析器已内置，断网也可使用。';
+      els.status.className = 'status';
+    }
+
+    async function copyText(text, button) {
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch (error) {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        textarea.remove();
+      }
+      const oldText = button.textContent;
+      button.textContent = '已复制';
+      button.classList.add('done');
+      setTimeout(() => {
+        button.textContent = oldText;
+        button.classList.remove('done');
+      }, 900);
+    }
+
+    function init() {
+      renderSummary([], []);
+      els.parse.addEventListener('click', handleParse);
+      els.clear.addEventListener('click', resetAll);
+      els.rate.addEventListener('input', renderProducts);
+      els.sort.addEventListener('change', renderProducts);
+      els.priority.addEventListener('change', renderProducts);
+      els.weightRisk.addEventListener('change', renderProducts);
+      els.missing.addEventListener('change', renderProducts);
+      els.weightError.addEventListener('change', renderProducts);
+      els.abnormal.addEventListener('change', renderProducts);
+      els.search.addEventListener('input', renderProducts);
+      els.list.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-copy]');
+        if (!button) return;
+        copyText(button.dataset.copy, button);
+      });
+    }
+
+    init();
+  </script>
+</body>
+</html>
