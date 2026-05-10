@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>TikTok 女装选品上架助手 v2</title>
+  <title>TikTok 女装 SKU 风险筛选器</title>
   <style>
     :root {
       color-scheme: light;
@@ -90,6 +90,7 @@
     }
 
     .import-panel,
+    .profit-panel,
     .toolbar,
     .summary {
       background: var(--surface);
@@ -180,6 +181,27 @@
     .btn.secondary { border-color: var(--line-strong); background: #fff; }
     .btn.copy { min-height: 32px; padding: 6px 9px; font-size: 12px; background: #fff; border-color: var(--line-strong); }
     .btn.copy.done { border-color: var(--green); color: var(--green); }
+
+    .profit-panel {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 12px;
+      padding: 14px;
+      margin-bottom: 16px;
+    }
+
+    .profit-panel .control input,
+    .profit-panel .control select {
+      width: 100%;
+      min-width: 0;
+    }
+
+    .export-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: end;
+    }
 
     .summary {
       display: grid;
@@ -522,6 +544,7 @@
       .page { padding: 18px 12px 32px; }
       .topbar,
       .import-panel,
+      .profit-panel,
       .card-main,
       .side { grid-template-columns: 1fr; }
       .rate-box { justify-content: start; box-shadow: none; }
@@ -536,8 +559,8 @@
   <main class="page">
     <section class="topbar">
       <div class="title">
-        <h1>TikTok 女装选品上架助手</h1>
-        <p>CSV 解析 / SKU 聚合 / 运费风险 / 马来西亚女装上架检查</p>
+        <h1>TikTok 女装 SKU 风险筛选器</h1>
+        <p>批量解析 CSV，识别重量、价格、尺寸、信息缺失和利润风险，辅助快速决定优先测试 / 暂缓上架。</p>
       </div>
       <label class="rate-box">
         <span>1 USD =</span>
@@ -562,6 +585,35 @@
         <button class="btn primary" id="parseBtn" type="button">解析 CSV</button>
         <button class="btn secondary" id="clearBtn" type="button">清空</button>
         <span class="status" id="status">数据仅在浏览器本地处理，不上传服务器。CSV 解析器已内置，断网也可使用。</span>
+      </div>
+    </section>
+
+    <section class="profit-panel" aria-label="利润测算参数">
+      <div class="control">
+        <label for="commissionRate">TikTok 平台佣金比例</label>
+        <input id="commissionRate" type="number" min="0" step="0.1" value="6">
+      </div>
+      <div class="control">
+        <label for="paymentRate">支付手续费比例</label>
+        <input id="paymentRate" type="number" min="0" step="0.1" value="2">
+      </div>
+      <div class="control">
+        <label for="otherCost">其他成本 MYR</label>
+        <input id="otherCost" type="number" min="0" step="0.01" value="0">
+      </div>
+      <div class="control">
+        <label for="targetMargin">目标最低利润率</label>
+        <input id="targetMargin" type="number" min="0" step="1" value="30">
+      </div>
+      <div class="control">
+        <label for="costField">采购价字段</label>
+        <select id="costField">
+          <option value="">导入 CSV 后自动识别</option>
+        </select>
+      </div>
+      <div class="export-actions">
+        <button class="btn secondary" id="exportPriorityBtn" type="button">导出优先测试清单 CSV</button>
+        <button class="btn secondary" id="exportRiskyBtn" type="button">导出问题商品清单 CSV</button>
       </div>
     </section>
 
@@ -685,6 +737,13 @@
       summary: document.getElementById('summary'),
       list: document.getElementById('productList'),
       rate: document.getElementById('exchangeRate'),
+      commissionRate: document.getElementById('commissionRate'),
+      paymentRate: document.getElementById('paymentRate'),
+      otherCost: document.getElementById('otherCost'),
+      targetMargin: document.getElementById('targetMargin'),
+      costField: document.getElementById('costField'),
+      exportPriority: document.getElementById('exportPriorityBtn'),
+      exportRisky: document.getElementById('exportRiskyBtn'),
       sort: document.getElementById('sortBy'),
       priority: document.getElementById('onlyPriority'),
       weightRisk: document.getElementById('onlyWeightRisk'),
@@ -695,7 +754,7 @@
       count: document.getElementById('countNote')
     };
 
-    const state = { rows: [], products: [] };
+    const state = { rows: [], products: [], headers: [] };
 
     const SUMMER_KEYWORDS = ['nipis', 'musim panas', 'pelindung matahari', 'ringan', 'breathable', 'sun protection', 'thin', 'lightweight', 'cooling', '透气', '轻薄', '防晒', '夏季', '凉感'];
     const LIGHT_CLOTHES_KEYWORDS = ['t-shirt', 'baju-t', 'tee', 'nipis', 'ringan', 'thin', '薄', '轻薄', '透气', '短袖'];
@@ -705,6 +764,7 @@
     const VIDEO_KEYWORDS = ['sun protection', 'uv', 'cooling', 'breathable', 'slimming', '显瘦', '防晒', '透气', '凉感', '遮肉'];
     const LOCAL_MARKET_KEYWORDS = ['malaysia', 'my', 'muslimah', 'hijab', 'baju', 'kurung', 'raya', 'musim panas', 'nipis', 'ringan', '马来西亚'];
     const MACHINE_TRANSLATION_PATTERNS = [/women women/i, /fashion female/i, /explosion models/i, /foreign trade/i, /cross-border/i, /女士女/i, /女的/i, /外贸/i, /跨境/i, /爆款款/i];
+    const COST_FIELD_KEYWORDS = ['采购价', '成本价', '供货价', 'cost', 'purchase', 'wholesale', 'price', '价格'];
 
     const fieldNames = {
       categoryId: ['分类id'],
@@ -731,6 +791,37 @@
       currency: ['店铺币种'],
       publishTime: ['平台刊登时间']
     };
+
+    function getProfitConfig() {
+      return {
+        exchangeRate: toNumber(els.rate.value) || 4.7,
+        commissionRate: (toNumber(els.commissionRate.value) ?? 6) / 100,
+        paymentRate: (toNumber(els.paymentRate.value) ?? 2) / 100,
+        otherCost: toNumber(els.otherCost.value) ?? 0,
+        targetMargin: (toNumber(els.targetMargin.value) ?? 30) / 100,
+        costField: els.costField.value
+      };
+    }
+
+    function chooseDefaultCostField(headers) {
+      const lowerHeaders = headers.map((header) => ({ raw: header, lower: String(header).toLowerCase() }));
+      for (const keyword of COST_FIELD_KEYWORDS) {
+        const lowerKeyword = keyword.toLowerCase();
+        const matched = lowerHeaders.find(({ lower }) => lower.includes(lowerKeyword));
+        if (matched) return matched.raw;
+      }
+      return '';
+    }
+
+    function populateCostFieldOptions(headers) {
+      const current = els.costField.value;
+      const defaultField = chooseDefaultCostField(headers);
+      const selected = current && headers.includes(current) ? current : defaultField;
+      els.costField.innerHTML = '<option value="">不计算采购价</option>' + headers.map((header) => `
+        <option value="${escapeHtml(header)}">${escapeHtml(header)}</option>
+      `).join('');
+      els.costField.value = selected;
+    }
 
     function value(row, key) {
       const names = fieldNames[key] || [key];
@@ -830,9 +921,9 @@
     }
 
     function tagClass(label) {
-      if (label === '优先测试' || label === '适合炎热天气' || label === '适合通勤' || label === '适合居家') return 'green';
-      if (label === '重量风险' || label === '信息缺失' || label === '疑似重量填错' || label === '重量异常' || label === '尺寸异常' || label === '价格异常') return 'red';
-      if (label === 'SKU复杂' || label === '价格偏高') return 'yellow';
+      if (label === '优先测试' || label === '利润健康' || label === '适合炎热天气' || label === '适合通勤' || label === '适合居家') return 'green';
+      if (label === '重量风险' || label === '信息缺失' || label === '疑似重量填错' || label === '重量异常' || label === '尺寸异常' || label === '价格异常' || label === '可能亏损' || label === '运费吃利润' || label === '利润无法计算') return 'red';
+      if (label === 'SKU复杂' || label === '价格偏高' || label === '利润偏低') return 'yellow';
       return '';
     }
 
@@ -944,10 +1035,11 @@
         product.currency = product.currency || value(row, 'currency');
         product.publishTime = product.publishTime || value(row, 'publishTime');
       });
-      return [...groups.values()].map(enrichProduct);
+      return [...groups.values()].map((product) => enrichProduct(product));
     }
 
     function enrichProduct(product) {
+      const config = getProfitConfig();
       const prices = product.rows.map((row) => value(row, 'price'));
       const localPrices = product.rows.map((row) => value(row, 'localPrice'));
       const stocks = product.rows.map((row) => toNumber(value(row, 'stock')) || 0);
@@ -978,9 +1070,32 @@
       const maxPrice = localPriceNums.length ? Math.max(...localPriceNums) : priceNums.length ? Math.max(...priceNums) : null;
       const highPrice = maxPrice !== null && maxPrice > 100;
       const shippingUsd = extraShippingUsd(weight);
+      const shippingMyr = shippingUsd === null ? null : shippingUsd * config.exchangeRate;
+      const salePriceNums = localPriceNums.length ? localPriceNums : priceNums;
+      const salePrice = salePriceNums.length ? Math.min(...salePriceNums) : null;
+      const salePriceRange = localPriceNums.length ? moneyRange(localPrices, product.currency || 'MYR') : moneyRange(prices, product.currency || 'MYR');
+      const costValues = config.costField ? product.rows.map((row) => cleanPrice(row[config.costField])).filter((n) => n !== null) : [];
+      const costPrice = costValues.length ? Math.min(...costValues) : null;
+      const profitCanCalculate = salePrice !== null && costPrice !== null;
+      const platformFee = salePrice !== null ? salePrice * config.commissionRate : null;
+      const paymentFee = salePrice !== null ? salePrice * config.paymentRate : null;
+      const estimatedProfit = profitCanCalculate ? salePrice - costPrice - platformFee - paymentFee - (shippingMyr || 0) - config.otherCost : null;
+      const profitMargin = estimatedProfit !== null && salePrice > 0 ? estimatedProfit / salePrice : null;
+      const profitStatus = estimatedProfit === null
+        ? '利润无法计算'
+        : estimatedProfit < 0
+          ? '可能亏损'
+          : profitMargin >= config.targetMargin
+            ? '利润健康'
+            : '利润偏低';
+      const profitHealthy = profitStatus === '利润健康';
+      const profitLow = profitStatus === '利润偏低';
+      const profitLoss = profitStatus === '可能亏损';
+      const profitUnknown = profitStatus === '利润无法计算';
+      const freightEatsProfit = shippingMyr !== null && estimatedProfit !== null && shippingMyr > estimatedProfit;
       const shippingProfitRisk = weight !== null && weight > 0.5 && minPrice !== null && minPrice < 35;
       const tags = [];
-      const hasAnyAbnormal = weightAnomaly || dimensionAnomaly || priceAnomaly || suspectedWeightError || missingInfo || skuCount > 8 || highPrice || shippingProfitRisk || titleQuality.issues.length > 0;
+      const hasAnyAbnormal = weightAnomaly || dimensionAnomaly || priceAnomaly || suspectedWeightError || missingInfo || skuCount > 8 || highPrice || shippingProfitRisk || titleQuality.issues.length > 0 || profitLoss || profitLow || profitUnknown || freightEatsProfit;
 
       if (weightAnomaly) tags.push('重量异常');
       if (dimensionAnomaly) tags.push('尺寸异常');
@@ -990,6 +1105,11 @@
       if (skuCount > 8) tags.push('SKU复杂');
       if (missingInfo) tags.push('信息缺失');
       if (highPrice) tags.push('价格偏高');
+      if (profitHealthy) tags.push('利润健康');
+      if (profitLoss) tags.push('可能亏损');
+      if (profitLow) tags.push('利润偏低');
+      if (profitUnknown) tags.push('利润无法计算');
+      if (freightEatsProfit) tags.push('运费吃利润');
       if (summerMatch) tags.push('适合炎热天气');
       if (hasAnyKeyword(text, COMMUTE_KEYWORDS)) tags.push('适合通勤');
       if (hasAnyKeyword(text, HOME_KEYWORDS)) tags.push('适合居家');
@@ -1015,6 +1135,11 @@
       if (weightAnomaly) score -= 20;
       if (dimensionAnomaly) score -= 15;
       if (priceAnomaly) score -= 15;
+      if (profitHealthy && !weightAnomaly && weight <= 0.5 && !missingInfo) score += 12;
+      if (profitLow) score -= 12;
+      if (profitLoss) score -= 30;
+      if (profitUnknown) score -= 10;
+      if (freightEatsProfit) score -= 15;
       score = Math.max(0, Math.min(100, score));
 
       const stockTotal = stocks.reduce((sum, n) => sum + n, 0);
@@ -1033,6 +1158,19 @@
         localPrices,
         priceRange: moneyRange(prices, product.currency),
         localPriceRange: moneyRange(localPrices, product.currency),
+        salePrice,
+        salePriceRange,
+        costPrice,
+        platformFee,
+        paymentFee,
+        estimatedProfit,
+        profitMargin,
+        profitStatus,
+        profitHealthy,
+        profitLow,
+        profitLoss,
+        profitUnknown,
+        freightEatsProfit,
         minPrice,
         maxPrice,
         highPrice,
@@ -1044,6 +1182,7 @@
         score,
         level,
         shippingUsd,
+        shippingMyr,
         summerMatch,
         titleQuality,
         suspectedWeightError,
@@ -1058,6 +1197,19 @@
         hasWeight,
         hasSource
       };
+    }
+
+    function handlingAdvice(product) {
+      if (product.profitLoss) return '预估利润为负，不建议上架，除非用于引流或重新定价。';
+      if (product.profitUnknown) return '售价或采购价缺失，利润无法计算，先补齐价格再判断。';
+      if (product.missingInfo) return '主图或来源链接缺失，暂缓上架，先补齐素材。';
+      if (product.dimensionAnomaly) return '尺寸为 0 或异常值，需补齐真实尺寸后再上架。';
+      if (product.weightAnomaly) return '重量为 0 或异常值，需补齐真实重量后再判断运费。';
+      if (product.freightEatsProfit) return '额外运费大于预估利润，需重新定价或降低采购成本。';
+      if (product.weight > 0.5) return '重量超过 0.5kg，需确认实际重量，否则运费可能吃掉利润。';
+      if (product.profitLow) return '利润偏低，建议对比竞品价格后再测试。';
+      if (product.profitHealthy && product.weight <= 0.5 && !product.missingInfo) return '利润健康，重量低，适合优先测试。';
+      return '可测试但需补充核价、素材和利润复核。';
     }
 
     function checklist(product) {
@@ -1076,6 +1228,11 @@
       }
       items.push(product.shippingUsd && product.shippingUsd > 0 ? `运费会增加 ${formatNum(product.shippingUsd)} USD。` : '暂无额外超重运费。');
       if (product.shippingProfitRisk) items.push('利润可能被额外运费吃掉。');
+      if (product.profitUnknown) items.push('售价为空或采购价为空，利润无法计算。');
+      if (product.profitLoss) items.push('预估利润为负，不建议上架，除非用于引流或重新定价。');
+      if (product.profitLow) items.push('利润率低于目标最低利润率，需重新核价。');
+      if (product.freightEatsProfit) items.push('额外运费 MYR 大于预估利润，运费吃利润。');
+      if (product.profitHealthy) items.push('利润健康，适合进入优先测试池。');
       items.push(product.skuCount > 8 ? 'SKU 过多，建议先精简颜色/尺码测试。' : 'SKU 数量可控。');
       items.push(product.hasMainImage ? '主图已填写，检查附图和尺码图是否完整。' : '主图缺失，需补图。');
       if (product.priceAnomaly) items.push('存在无法解析的价格，请检查 SKU 明细。');
@@ -1096,16 +1253,21 @@
     function renderSummary(products, rows) {
       const weights = products.map((p) => p.weight).filter((n) => n !== null);
       const prices = products.map((p) => p.minPrice).filter((n) => n !== null);
+      const margins = products.map((p) => p.profitMargin).filter((n) => n !== null && Number.isFinite(n));
       const data = [
         ['产品数', products.length, ''],
         ['SKU 总数', rows.length, ''],
         ['优先测试', products.filter((p) => p.level === '优先测试').length, 'good'],
+        ['利润健康产品数', products.filter((p) => p.profitHealthy).length, 'good'],
+        ['利润偏低产品数', products.filter((p) => p.profitLow).length, 'warn'],
+        ['可能亏损产品数', products.filter((p) => p.profitLoss).length, 'risk'],
         ['重量风险', products.filter((p) => p.tags.includes('重量风险')).length, 'risk'],
         ['疑似重量填错', products.filter((p) => p.suspectedWeightError).length, 'risk'],
         ['重量异常', products.filter((p) => p.weightAnomaly).length, 'risk'],
         ['尺寸异常', products.filter((p) => p.dimensionAnomaly).length, 'risk'],
         ['价格异常', products.filter((p) => p.priceAnomaly).length, 'risk'],
         ['信息缺失', products.filter((p) => p.missingInfo).length, 'warn'],
+        ['平均预估利润率', margins.length ? `${formatNum((margins.reduce((a, b) => a + b, 0) / margins.length) * 100)}%` : '-', ''],
         ['平均重量', weights.length ? `${formatNum(weights.reduce((a, b) => a + b, 0) / weights.length, 3)}kg` : '-', ''],
         ['平均价格', prices.length ? `${formatNum(prices.reduce((a, b) => a + b, 0) / prices.length)} MYR` : '-', '']
       ];
@@ -1168,14 +1330,19 @@
       const tags = product.tags.length
         ? product.tags.map((tag) => `<span class="tag ${tagClass(tag)}">${escapeHtml(tag)}</span>`).join('')
         : '<span class="tag">未标记</span>';
-      const shippingMyr = product.shippingUsd === null ? null : product.shippingUsd * rate;
+      const shippingMyr = product.shippingMyr;
       const source = product.sourceUrl
         ? `<a href="${escapeHtml(product.sourceUrl)}" target="_blank" rel="noopener noreferrer">打开链接</a>`
         : '-';
       const skuList = product.rows.map((row) => value(row, 'sku')).filter(Boolean).join('\n');
       const cardClass = levelClass(product.level);
       const levelName = cardClass.replace('level-', '');
-      const alert = product.suspectedWeightError
+      const advice = handlingAdvice(product);
+      const alert = product.profitLoss
+        ? '<div class="alert">可能亏损：预估利润为负，不建议上架，除非用于引流或重新定价。</div>'
+        : product.freightEatsProfit
+          ? '<div class="alert">运费吃利润：额外运费 MYR 大于预估利润。</div>'
+          : product.suspectedWeightError
         ? '<div class="alert">疑似重量填错：轻薄/T-shirt 类商品重量偏高，请优先核实实际重量。</div>'
         : product.weightAnomaly
           ? '<div class="alert">重量异常：重量为 0 或异常值，需补齐真实重量。</div>'
@@ -1203,10 +1370,19 @@
               <div class="tags">${tags}</div>
               ${alert}
               <div class="title-quality">
+                处理建议：<strong>${escapeHtml(advice)}</strong>
+              </div>
+              <div class="title-quality">
                 标题质量：<strong>${escapeHtml(product.titleQuality.summary)}</strong>
                 ${product.titleQuality.issues.length ? `；问题：${escapeHtml(product.titleQuality.issues.join('、'))}` : ''}
               </div>
               <div class="facts">
+                ${fact('推荐等级', product.level)}
+                ${fact('利润状态', product.profitStatus)}
+                ${fact('预估利润', product.estimatedProfit === null ? '-' : `${formatNum(product.estimatedProfit)} MYR`)}
+                ${fact('预估利润率', product.profitMargin === null ? '-' : `${formatNum(product.profitMargin * 100)}%`)}
+                ${fact('采购价', product.costPrice === null ? '-' : `${formatNum(product.costPrice)} MYR`)}
+                ${fact('额外运费 MYR', product.shippingMyr === null ? '-' : `${formatNum(product.shippingMyr)} MYR`)}
                 ${fact('分类id', product.categoryId || '-')}
                 ${fact('产品id', product.productId || '-')}
                 ${fact('SKU 数', `${product.skuCount} 个`)}
@@ -1232,10 +1408,13 @@
                 </div>
               </div>
               <div class="shipping">
+                <div>利润状态：<strong>${escapeHtml(product.profitStatus)}</strong></div>
+                <div>预估利润：<strong>${product.estimatedProfit === null ? '-' : `${formatNum(product.estimatedProfit)} MYR`}</strong></div>
+                <div>预估利润率：<strong>${product.profitMargin === null ? '-' : `${formatNum(product.profitMargin * 100)}%`}</strong></div>
                 <div>额外运费 USD：<strong>${product.shippingUsd === null ? '-' : `${formatNum(product.shippingUsd)} USD`}</strong></div>
                 <div>额外运费 MYR：<strong>${shippingMyr === null ? '-' : `${formatNum(shippingMyr)} MYR`}</strong></div>
                 <div>是否超过 0.5kg：<strong>${product.weight === null ? '-' : product.weight > 0.5 ? '是' : '否'}</strong></div>
-                ${product.shippingProfitRisk ? '<div class="danger">利润可能被额外运费吃掉</div>' : ''}
+                ${product.shippingProfitRisk || product.freightEatsProfit ? '<div class="danger">利润可能被额外运费吃掉</div>' : ''}
               </div>
               <ul class="advice">${checklist(product).slice(0, 6).map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
             </aside>
@@ -1294,6 +1473,78 @@
         </div>`;
     }
 
+    function csvEscape(valueText) {
+      const text = String(valueText ?? '');
+      if (/[",\r\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
+      return text;
+    }
+
+    function downloadCsv(filename, headers, rows) {
+      const csv = '\uFEFF' + [
+        headers.map(csvEscape).join(','),
+        ...rows.map((row) => headers.map((header) => csvEscape(row[header])).join(','))
+      ].join('\r\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function todayString() {
+      const date = new Date();
+      const yyyy = date.getFullYear();
+      const mm = String(date.getMonth() + 1).padStart(2, '0');
+      const dd = String(date.getDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    }
+
+    function exportPriorityProducts() {
+      const headers = ['产品id', '产品标题', 'SKU 数', '售价区间', '采购价', '重量', '额外运费 MYR', '预估利润', '预估利润率', '推荐等级', '来源Url', '主图地址'];
+      const rows = state.products
+        .filter((product) => product.level === '优先测试')
+        .map((product) => ({
+          '产品id': product.productId || '',
+          '产品标题': product.title || '',
+          'SKU 数': product.skuCount,
+          '售价区间': product.salePriceRange || '',
+          '采购价': product.costPrice === null ? '' : formatNum(product.costPrice),
+          '重量': product.weightDisplay,
+          '额外运费 MYR': product.shippingMyr === null ? '' : formatNum(product.shippingMyr),
+          '预估利润': product.estimatedProfit === null ? '' : formatNum(product.estimatedProfit),
+          '预估利润率': product.profitMargin === null ? '' : `${formatNum(product.profitMargin * 100)}%`,
+          '推荐等级': product.level,
+          '来源Url': product.sourceUrl || '',
+          '主图地址': product.mainImage || ''
+        }));
+      downloadCsv(`priority-products-${todayString()}.csv`, headers, rows);
+    }
+
+    function exportRiskyProducts() {
+      const headers = ['产品id', '产品标题', '问题标签', '重量', '尺寸', '售价', '采购价', '额外运费 MYR', '预估利润', '预估利润率', '处理建议', '来源Url'];
+      const rows = state.products
+        .filter((product) => product.abnormal || product.level !== '优先测试')
+        .map((product) => ({
+          '产品id': product.productId || '',
+          '产品标题': product.title || '',
+          '问题标签': product.tags.filter((tag) => tagClass(tag) !== 'green').join('、'),
+          '重量': product.weightDisplay,
+          '尺寸': product.sizeDisplay,
+          '售价': product.salePrice === null ? '' : formatNum(product.salePrice),
+          '采购价': product.costPrice === null ? '' : formatNum(product.costPrice),
+          '额外运费 MYR': product.shippingMyr === null ? '' : formatNum(product.shippingMyr),
+          '预估利润': product.estimatedProfit === null ? '' : formatNum(product.estimatedProfit),
+          '预估利润率': product.profitMargin === null ? '' : `${formatNum(product.profitMargin * 100)}%`,
+          '处理建议': handlingAdvice(product),
+          '来源Url': product.sourceUrl || ''
+        }));
+      downloadCsv(`risky-products-${todayString()}.csv`, headers, rows);
+    }
+
     async function handleParse() {
       els.status.textContent = '正在读取 CSV...';
       els.status.className = 'status';
@@ -1314,6 +1565,10 @@
         const result = parseCsvText(csvText);
         const rows = result.data.filter((row) => Object.values(row).some((cell) => String(cell ?? '').trim()));
         state.rows = rows;
+        state.headers = result.meta && result.meta.fields && result.meta.fields.length
+          ? result.meta.fields
+          : Object.keys(rows[0] || {});
+        populateCostFieldOptions(state.headers);
         state.products = aggregateRows(rows);
         renderSummary(state.products, state.rows);
         renderProducts();
@@ -1339,10 +1594,22 @@
       els.abnormal.checked = false;
       state.rows = [];
       state.products = [];
+      state.headers = [];
+      populateCostFieldOptions([]);
       renderSummary([], []);
       renderProducts();
       els.status.textContent = '数据仅在浏览器本地处理，不上传服务器。CSV 解析器已内置，断网也可使用。';
       els.status.className = 'status';
+    }
+
+    function recalculateProducts() {
+      if (!state.rows.length) {
+        renderProducts();
+        return;
+      }
+      state.products = aggregateRows(state.rows);
+      renderSummary(state.products, state.rows);
+      renderProducts();
     }
 
     async function copyText(text, button) {
@@ -1372,7 +1639,14 @@
       renderSummary([], []);
       els.parse.addEventListener('click', handleParse);
       els.clear.addEventListener('click', resetAll);
-      els.rate.addEventListener('input', renderProducts);
+      els.rate.addEventListener('input', recalculateProducts);
+      els.commissionRate.addEventListener('input', recalculateProducts);
+      els.paymentRate.addEventListener('input', recalculateProducts);
+      els.otherCost.addEventListener('input', recalculateProducts);
+      els.targetMargin.addEventListener('input', recalculateProducts);
+      els.costField.addEventListener('change', recalculateProducts);
+      els.exportPriority.addEventListener('click', exportPriorityProducts);
+      els.exportRisky.addEventListener('click', exportRiskyProducts);
       els.sort.addEventListener('change', renderProducts);
       els.priority.addEventListener('change', renderProducts);
       els.weightRisk.addEventListener('change', renderProducts);
