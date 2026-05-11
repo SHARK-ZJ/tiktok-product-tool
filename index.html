@@ -1218,6 +1218,9 @@
       if (weightAnomaly) {
         level = score >= 60 ? '可测试但需检查' : '暂缓上架';
       }
+      if (profitLoss || (estimatedProfit !== null && estimatedProfit < 0)) {
+        level = '暂缓上架';
+      }
 
       return {
         ...product,
