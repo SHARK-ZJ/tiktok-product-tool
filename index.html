@@ -567,6 +567,11 @@
         <input id="exchangeRate" type="number" min="0" step="0.01" value="4.7">
         <span>MYR</span>
       </label>
+      <label class="rate-box">
+        <span>1 RMB =</span>
+        <input id="rmbRate" type="number" min="0" step="0.01" value="0.65">
+        <span>MYR</span>
+      </label>
     </section>
 
     <section class="import-panel">
@@ -615,7 +620,13 @@
         <label for="shippingRules">超重运费规则 kg:USD</label>
         <input id="shippingRules" type="text" value="0.5:0,1:4.5,1.5:9,2:13.5,2.5:18,3:22.5">
       </div>
+      <div class="control">
+        <label for="costTableFile">上传 1688 成本表</label>
+        <input id="costTableFile" type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+      </div>
       <div class="export-actions">
+        <button class="btn secondary" id="loadCostTableBtn" type="button">读取1688成本表</button>
+        <button class="btn secondary" id="export1688TasksBtn" type="button">导出1688抓价清单 CSV</button>
         <button class="btn secondary" id="exportPriorityBtn" type="button">导出优先测试清单 CSV</button>
         <button class="btn secondary" id="exportTestableBtn" type="button">导出可测试清单 CSV</button>
         <button class="btn secondary" id="exportRiskyBtn" type="button">导出问题商品清单 CSV</button>
@@ -742,12 +753,16 @@
       summary: document.getElementById('summary'),
       list: document.getElementById('productList'),
       rate: document.getElementById('exchangeRate'),
+      rmbRate: document.getElementById('rmbRate'),
       commissionRate: document.getElementById('commissionRate'),
       paymentRate: document.getElementById('paymentRate'),
       otherCost: document.getElementById('otherCost'),
       targetMargin: document.getElementById('targetMargin'),
       costField: document.getElementById('costField'),
+      costTableFile: document.getElementById('costTableFile'),
+      loadCostTable: document.getElementById('loadCostTableBtn'),
       shippingRules: document.getElementById('shippingRules'),
+      export1688Tasks: document.getElementById('export1688TasksBtn'),
       exportPriority: document.getElementById('exportPriorityBtn'),
       exportTestable: document.getElementById('exportTestableBtn'),
       exportRisky: document.getElementById('exportRiskyBtn'),
@@ -761,7 +776,7 @@
       count: document.getElementById('countNote')
     };
 
-    const state = { rows: [], products: [], headers: [] };
+    const state = { rows: [], products: [], headers: [], costRows: [], costMap: new Map() };
 
     const SUMMER_KEYWORDS = ['nipis', 'musim panas', 'pelindung matahari', 'ringan', 'breathable', 'sun protection', 'thin', 'lightweight', 'cooling', '透气', '轻薄', '防晒', '夏季', '凉感'];
     const LIGHT_CLOTHES_KEYWORDS = ['t-shirt', 'baju-t', 'tee', 'nipis', 'ringan', 'thin', '薄', '轻薄', '透气', '短袖'];
@@ -784,6 +799,7 @@
       variant3: ['变种属性值三'],
       price: ['价格(站点币种)', 'Price', 'Original Price', 'price', '零售价（本地币种）'],
       localPrice: ['本地展示价', 'Sale Price', 'Selling Price', 'Display Price'],
+      costRmb: ['1688采购价', '采购价RMB', '采购价', '成本价', '1688 Price RMB', 'cost_rmb'],
       stock: ['库存', 'Stock', 'Inventory', 'warehouse_quantity'],
       mainImage: ['主图(url)地址', 'Main Image', 'Main Image URL', 'Image URL', 'main_image', '主图'],
       weight: ['重量(kg)', 'Weight(kg)', 'Weight (kg)', 'Weight(g)', 'Weight (g)', 'Package Weight', 'parcel_weight', '包裹重量(g)'],
@@ -792,7 +808,9 @@
       height: ['高', 'Package Height(cm)', 'Height(cm)', 'Height', 'parcel_height', '包裹高度(cm)'],
       warehouse: ['仓库名称'],
       cod: ['货到付款', 'cod'],
-      sourceUrl: ['来源Url', '来源URL', '来源url', 'Source URL', '1688 URL', 'Product URL'],
+      sourceUrl: ['来源Url', '来源URL', '来源url', 'source_url', 'Source URL', '1688 URL', 'Product URL', '1688链接'],
+      sourceWeight: ['1688重量', '1688重量(g)', 'source_weight', 'source_weight_g'],
+      sourceShippingRmb: ['1688运费', '国内运费', 'source_shipping_rmb'],
       shopName: ['店铺名'],
       productId: ['产品id', '产品ID', 'Product ID', 'Product Id', 'product_id', '商品 ID', '商品ID'],
       currency: ['店铺币种'],
@@ -802,6 +820,7 @@
     function getProfitConfig() {
       return {
         exchangeRate: toNumber(els.rate.value) || 4.7,
+        rmbRate: toNumber(els.rmbRate.value) || 0.65,
         commissionRate: (toNumber(els.commissionRate.value) ?? 6) / 100,
         paymentRate: (toNumber(els.paymentRate.value) ?? 2) / 100,
         otherCost: toNumber(els.otherCost.value) ?? 0,
@@ -885,6 +904,22 @@
       return Boolean(findField(row, key));
     }
 
+    function extractOfferId(url) {
+      const text = String(url || '').trim();
+      if (!text) return '';
+      const offerMatch = text.match(/offer\/(\d+)\.html/i);
+      if (offerMatch) return offerMatch[1];
+      const idMatch = text.match(/[?&](?:offerId|id)=(\d+)/i);
+      if (idMatch) return idMatch[1];
+      const longNumber = text.match(/\b\d{10,}\b/);
+      return longNumber ? longNumber[0] : '';
+    }
+
+    function costMatchKey(url) {
+      const offerId = extractOfferId(url);
+      return offerId || String(url || '').trim().split(/[?#]/)[0].replace(/\/$/, '');
+    }
+
     function numericField(row, key) {
       const field = fieldNameFor(row, key);
       return {
@@ -897,6 +932,11 @@
     function normalizeWeight(row) {
       const field = fieldNameFor(row, 'weight');
       return normalizeWeightKg(field ? row[field] : '', field);
+    }
+
+    function normalizeSourceWeightKg(row) {
+      const field = fieldNameFor(row, 'sourceWeight');
+      return normalizeWeightKg(field ? row[field] : '', field || 'source_weight_g');
     }
 
     function normalizeWeightKg(rawValue, fieldName) {
@@ -1111,14 +1151,14 @@
       return rows;
     }
 
-    async function parseXlsxBuffer(buffer) {
+    async function parseXlsxBuffer(buffer, dataStartIndex = 5) {
       const entries = await unzipXlsxEntries(buffer);
       const sheetXml = entries.get('xl/worksheets/sheet1.xml') || [...entries.entries()].find(([name]) => /^xl\/worksheets\/sheet\d+\.xml$/.test(name))?.[1];
       if (!sheetXml) throw new Error('未找到 .xlsx 工作表，请另存为 CSV UTF-8 后上传。');
       const sharedStrings = parseSharedStrings(entries.get('xl/sharedStrings.xml') || '');
       const tableRows = parseWorksheetRows(sheetXml, sharedStrings);
       const headers = (tableRows[0] || []).map((header) => String(header || '').trim());
-      const dataRows = tableRows.slice(5);
+      const dataRows = tableRows.slice(dataStartIndex);
       const data = dataRows.map((cells) => {
         const row = {};
         headers.forEach((header, index) => {
@@ -1142,7 +1182,7 @@
       const buffer = await file.arrayBuffer();
       const fileName = String(file.name || '').toLowerCase();
       if (fileName.endsWith('.xlsx')) {
-        return { text: '', encoding: 'XLSX', result: await parseXlsxBuffer(buffer) };
+        return { text: '', encoding: 'XLSX', result: await parseXlsxBuffer(buffer, 5) };
       }
       const utf8Text = new TextDecoder('utf-8', { fatal: false }).decode(buffer);
       if (!looksLikeEncodingIssue(utf8Text)) return { text: utf8Text, encoding: 'UTF-8' };
@@ -1157,6 +1197,72 @@
       }
 
       return { text: utf8Text, encoding: '可能乱码' };
+    }
+
+    async function readTableFile(file) {
+      if (!file) return { result: null, text: '', encoding: '' };
+      const buffer = await file.arrayBuffer();
+      const fileName = String(file.name || '').toLowerCase();
+      if (fileName.endsWith('.xlsx')) {
+        return { result: await parseXlsxBuffer(buffer, 1), text: '', encoding: 'XLSX' };
+      }
+      const utf8Text = new TextDecoder('utf-8', { fatal: false }).decode(buffer);
+      if (!looksLikeEncodingIssue(utf8Text)) return { result: parseCsvText(utf8Text), text: utf8Text, encoding: 'UTF-8' };
+      for (const encoding of ['gb18030', 'gbk']) {
+        try {
+          const decoded = new TextDecoder(encoding, { fatal: false }).decode(buffer);
+          if (!looksLikeEncodingIssue(decoded)) return { result: parseCsvText(decoded), text: decoded, encoding: encoding.toUpperCase() };
+        } catch (error) {
+          continue;
+        }
+      }
+      return { result: parseCsvText(utf8Text), text: utf8Text, encoding: '可能乱码' };
+    }
+
+    function buildCostMap(rows) {
+      const map = new Map();
+      rows.forEach((row) => {
+        const sourceUrl = value(row, 'sourceUrl');
+        const key = costMatchKey(sourceUrl);
+        if (!key) return;
+        const costRmb = cleanPrice(value(row, 'costRmb'));
+        const sourceWeightInfo = normalizeSourceWeightKg(row);
+        const sourceShippingRmb = cleanPrice(value(row, 'sourceShippingRmb'));
+        map.set(key, {
+          sourceUrl,
+          costRmb,
+          sourceWeightKg: sourceWeightInfo.value,
+          sourceShippingRmb,
+          note: row['备注'] || row['note'] || row['Note'] || ''
+        });
+      });
+      return map;
+    }
+
+    function findMatchedCost(sourceUrl) {
+      const key = costMatchKey(sourceUrl);
+      return key ? state.costMap.get(key) || null : null;
+    }
+
+    async function handleCostTableParse() {
+      const file = els.costTableFile.files && els.costTableFile.files[0];
+      if (!file) {
+        els.status.textContent = '请先上传 1688 成本表 / 成本匹配表。';
+        els.status.className = 'status error';
+        return;
+      }
+      try {
+        const parsed = await readTableFile(file);
+        const rows = (parsed.result?.data || []).filter((row) => Object.values(row).some((cell) => String(cell ?? '').trim()));
+        state.costRows = rows;
+        state.costMap = buildCostMap(rows);
+        recalculateProducts();
+        els.status.textContent = `1688 成本表已读取：${state.costMap.size} 条可匹配成本${parsed.encoding ? `，识别编码：${parsed.encoding}` : ''}。`;
+        els.status.className = 'status ok';
+      } catch (error) {
+        els.status.textContent = error.message || '1688 成本表解析失败，请另存为 CSV UTF-8 后上传。';
+        els.status.className = 'status error';
+      }
     }
 
     function assessTitle(title, description) {
@@ -1213,6 +1319,9 @@
             warehouse: value(row, 'warehouse'),
             cod: value(row, 'cod'),
             sourceUrl: value(row, 'sourceUrl'),
+            costRmb: value(row, 'costRmb'),
+            sourceWeight: value(row, 'sourceWeight'),
+            sourceShippingRmb: value(row, 'sourceShippingRmb'),
             shopName: value(row, 'shopName'),
             currency: value(row, 'currency'),
             publishTime: value(row, 'publishTime')
@@ -1229,6 +1338,9 @@
         product.warehouse = product.warehouse || value(row, 'warehouse');
         product.cod = product.cod || value(row, 'cod');
         product.sourceUrl = product.sourceUrl || value(row, 'sourceUrl');
+        product.costRmbRaw = product.costRmbRaw || value(row, 'costRmb');
+        product.sourceWeightRaw = product.sourceWeightRaw || value(row, 'sourceWeight');
+        product.sourceShippingRmbRaw = product.sourceShippingRmbRaw || value(row, 'sourceShippingRmb');
         product.shopName = product.shopName || value(row, 'shopName');
         product.currency = product.currency || value(row, 'currency');
         product.publishTime = product.publishTime || value(row, 'publishTime');
@@ -1242,11 +1354,17 @@
       const localPrices = product.rows.map((row) => value(row, 'localPrice'));
       const stocks = product.rows.map((row) => toNumber(value(row, 'stock')) || 0);
       const weightInfos = product.rows.map((row) => normalizeWeight(row));
-      const weightValues = weightInfos.map((info) => info.value);
+      let weightValues = weightInfos.map((info) => info.value);
       const suspectedGramWeight = weightInfos.some((info) => info.suspectedGram);
       const lengthValues = product.rows.map((row) => numericField(row, 'length').value);
       const widthValues = product.rows.map((row) => numericField(row, 'width').value);
       const heightValues = product.rows.map((row) => numericField(row, 'height').value);
+      const matchedCost = findMatchedCost(product.sourceUrl);
+      const sourceWeightValues = product.rows.map((row) => normalizeSourceWeightKg(row).value).filter((n) => n !== null);
+      const sourceWeightKg = sourceWeightValues.length ? Math.max(...sourceWeightValues) : matchedCost ? matchedCost.sourceWeightKg : null;
+      if (!weightValues.some((n) => n !== null) && sourceWeightKg !== null) {
+        weightValues = product.rows.length ? product.rows.map(() => sourceWeightKg) : [sourceWeightKg];
+      }
       const priceNums = prices.map(cleanPrice).filter((n) => n !== null);
       const localPriceNums = localPrices.map(cleanPrice).filter((n) => n !== null);
       const text = `${product.title} ${product.description}`;
@@ -1275,8 +1393,15 @@
       const salePriceNums = localPriceNums.length ? localPriceNums : priceNums;
       const salePrice = salePriceNums.length ? Math.min(...salePriceNums) : null;
       const salePriceRange = localPriceNums.length ? moneyRange(localPrices, product.currency || 'MYR') : moneyRange(prices, product.currency || 'MYR');
+      const rowCostRmbValues = product.rows.map((row) => cleanPrice(value(row, 'costRmb'))).filter((n) => n !== null);
+      const matchedCostRmb = matchedCost && matchedCost.costRmb !== null ? matchedCost.costRmb : null;
+      const costRmb = rowCostRmbValues.length ? Math.min(...rowCostRmbValues) : matchedCostRmb;
+      const sourceShippingRmbValues = product.rows.map((row) => cleanPrice(value(row, 'sourceShippingRmb'))).filter((n) => n !== null);
+      const sourceShippingRmb = sourceShippingRmbValues.length ? Math.min(...sourceShippingRmbValues) : matchedCost ? matchedCost.sourceShippingRmb : null;
+      const costMyrFromRmb = costRmb !== null ? costRmb * config.rmbRate : null;
       const costValues = config.costField ? product.rows.map((row) => cleanPrice(row[config.costField])).filter((n) => n !== null) : [];
-      const costPrice = costValues.length ? Math.min(...costValues) : null;
+      const costPrice = costMyrFromRmb !== null ? costMyrFromRmb : costValues.length ? Math.min(...costValues) : null;
+      const costSource = costMyrFromRmb !== null ? '1688 RMB' : costPrice !== null ? 'MYR字段' : '';
       const profitCanCalculate = salePrice !== null && costPrice !== null;
       const platformFee = salePrice !== null ? salePrice * config.commissionRate : null;
       const paymentFee = salePrice !== null ? salePrice * config.paymentRate : null;
@@ -1376,6 +1501,12 @@
         salePrice,
         salePriceRange,
         costPrice,
+        costRmb,
+        costMyr: costPrice,
+        costSource,
+        matchedCost,
+        sourceWeightKg,
+        sourceShippingRmb,
         platformFee,
         paymentFee,
         estimatedProfit,
@@ -1605,7 +1736,9 @@
                 ${fact('利润状态', product.profitStatus)}
                 ${fact('预估利润', product.estimatedProfit === null ? '-' : `${formatNum(product.estimatedProfit)} MYR`)}
                 ${fact('预估利润率', product.profitMargin === null ? '-' : `${formatNum(product.profitMargin * 100)}%`)}
-                ${fact('采购价', product.costPrice === null ? '-' : `${formatNum(product.costPrice)} MYR`)}
+                ${fact('1688采购价', product.costRmb === null ? '-' : `${formatNum(product.costRmb)} RMB`)}
+                ${fact('折算采购价', product.costMyr === null ? '-' : `${formatNum(product.costMyr)} MYR`)}
+                ${fact('1688国内运费', product.sourceShippingRmb === null ? '-' : `${formatNum(product.sourceShippingRmb)} RMB`)}
                 ${fact('额外运费 MYR', product.shippingMyr === null ? '-' : `${formatNum(product.shippingMyr)} MYR`)}
                 ${fact('分类id', product.categoryId || '-')}
                 ${fact('产品id', product.productId || '-')}
@@ -1633,6 +1766,8 @@
               </div>
               <div class="shipping">
                 <div>利润状态：<strong>${escapeHtml(product.profitStatus)}</strong></div>
+                <div>1688采购价：<strong>${product.costRmb === null ? '-' : `${formatNum(product.costRmb)} RMB`}</strong></div>
+                <div>折算采购价：<strong>${product.costMyr === null ? '-' : `${formatNum(product.costMyr)} MYR`}</strong></div>
                 <div>预估利润：<strong>${product.estimatedProfit === null ? '-' : `${formatNum(product.estimatedProfit)} MYR`}</strong></div>
                 <div>预估利润率：<strong>${product.profitMargin === null ? '-' : `${formatNum(product.profitMargin * 100)}%`}</strong></div>
                 <div>额外运费 USD：<strong>${product.shippingUsd === null ? '-' : `${formatNum(product.shippingUsd)} USD`}</strong></div>
@@ -1728,7 +1863,7 @@
     }
 
     function exportPriorityProducts() {
-      const headers = ['产品id', '产品标题', 'SKU 数', '售价区间', '采购价', '重量', '额外运费 MYR', '预估利润', '预估利润率', '推荐等级', '来源Url', '主图地址'];
+      const headers = ['产品id', '产品标题', 'SKU 数', '售价区间', '1688采购价 RMB', '采购价 MYR', '重量', '额外运费 MYR', '预估利润', '预估利润率', '推荐等级', '来源Url', '主图地址'];
       const rows = state.products
         .filter((product) => product.level === '优先测试')
         .map((product) => ({
@@ -1736,7 +1871,8 @@
           '产品标题': product.title || '',
           'SKU 数': product.skuCount,
           '售价区间': product.salePriceRange || '',
-          '采购价': product.costPrice === null ? '' : formatNum(product.costPrice),
+          '1688采购价 RMB': product.costRmb === null ? '' : formatNum(product.costRmb),
+          '采购价 MYR': product.costMyr === null ? '' : formatNum(product.costMyr),
           '重量': product.weightDisplay,
           '额外运费 MYR': product.shippingMyr === null ? '' : formatNum(product.shippingMyr),
           '预估利润': product.estimatedProfit === null ? '' : formatNum(product.estimatedProfit),
@@ -1749,7 +1885,7 @@
     }
 
     function exportTestableProducts() {
-      const headers = ['产品id', '产品标题', 'SKU 数', '售价区间', '采购价', '重量', '额外运费 MYR', '预估利润', '预估利润率', '推荐等级', '处理建议', '来源Url', '主图地址'];
+      const headers = ['产品id', '产品标题', 'SKU 数', '售价区间', '1688采购价 RMB', '采购价 MYR', '重量', '额外运费 MYR', '预估利润', '预估利润率', '推荐等级', '处理建议', '来源Url', '主图地址'];
       const rows = state.products
         .filter((product) => product.level === '优先测试' || product.level === '可测试但需检查')
         .map((product) => ({
@@ -1757,7 +1893,8 @@
           '产品标题': product.title || '',
           'SKU 数': product.skuCount,
           '售价区间': product.salePriceRange || '',
-          '采购价': product.costPrice === null ? '' : formatNum(product.costPrice),
+          '1688采购价 RMB': product.costRmb === null ? '' : formatNum(product.costRmb),
+          '采购价 MYR': product.costMyr === null ? '' : formatNum(product.costMyr),
           '重量': product.weightDisplay,
           '额外运费 MYR': product.shippingMyr === null ? '' : formatNum(product.shippingMyr),
           '预估利润': product.estimatedProfit === null ? '' : formatNum(product.estimatedProfit),
@@ -1771,7 +1908,7 @@
     }
 
     function exportRiskyProducts() {
-      const headers = ['产品id', '产品标题', '问题标签', '重量', '尺寸', '售价', '采购价', '额外运费 MYR', '预估利润', '预估利润率', '处理建议', '来源Url'];
+      const headers = ['产品id', '产品标题', '问题标签', '重量', '尺寸', '售价', '1688采购价 RMB', '采购价 MYR', '额外运费 MYR', '预估利润', '预估利润率', '处理建议', '来源Url'];
       const rows = state.products
         .filter((product) => product.hardRisk)
         .map((product) => ({
@@ -1781,7 +1918,8 @@
           '重量': product.weightDisplay,
           '尺寸': product.sizeDisplay,
           '售价': product.salePrice === null ? '' : formatNum(product.salePrice),
-          '采购价': product.costPrice === null ? '' : formatNum(product.costPrice),
+          '1688采购价 RMB': product.costRmb === null ? '' : formatNum(product.costRmb),
+          '采购价 MYR': product.costMyr === null ? '' : formatNum(product.costMyr),
           '额外运费 MYR': product.shippingMyr === null ? '' : formatNum(product.shippingMyr),
           '预估利润': product.estimatedProfit === null ? '' : formatNum(product.estimatedProfit),
           '预估利润率': product.profitMargin === null ? '' : `${formatNum(product.profitMargin * 100)}%`,
@@ -1789,6 +1927,20 @@
           '来源Url': product.sourceUrl || ''
         }));
       downloadCsv(`risky-products-${todayString()}.csv`, headers, rows);
+    }
+
+    function export1688FetchTasks() {
+      const headers = ['产品id', '产品标题', 'SKU数', 'TikTok售价', '来源Url'];
+      const rows = state.products
+        .filter((product) => product.sourceUrl && product.costRmb === null && product.costPrice === null)
+        .map((product) => ({
+          '产品id': product.productId || '',
+          '产品标题': product.title || '',
+          'SKU数': product.skuCount,
+          'TikTok售价': product.salePrice === null ? '' : formatNum(product.salePrice),
+          '来源Url': product.sourceUrl || ''
+        }));
+      downloadCsv(`1688-fetch-tasks-${todayString()}.csv`, headers, rows);
     }
 
     async function handleParse() {
@@ -1831,6 +1983,7 @@
 
     function resetAll() {
       els.file.value = '';
+      els.costTableFile.value = '';
       els.text.value = '';
       els.search.value = '';
       els.priority.checked = false;
@@ -1841,6 +1994,8 @@
       state.rows = [];
       state.products = [];
       state.headers = [];
+      state.costRows = [];
+      state.costMap = new Map();
       populateCostFieldOptions([]);
       renderSummary([], []);
       renderProducts();
@@ -1886,12 +2041,15 @@
       els.parse.addEventListener('click', handleParse);
       els.clear.addEventListener('click', resetAll);
       els.rate.addEventListener('input', recalculateProducts);
+      els.rmbRate.addEventListener('input', recalculateProducts);
       els.commissionRate.addEventListener('input', recalculateProducts);
       els.paymentRate.addEventListener('input', recalculateProducts);
       els.otherCost.addEventListener('input', recalculateProducts);
       els.targetMargin.addEventListener('input', recalculateProducts);
       els.costField.addEventListener('change', recalculateProducts);
       els.shippingRules.addEventListener('input', recalculateProducts);
+      els.loadCostTable.addEventListener('click', handleCostTableParse);
+      els.export1688Tasks.addEventListener('click', export1688FetchTasks);
       els.exportPriority.addEventListener('click', exportPriorityProducts);
       els.exportTestable.addEventListener('click', exportTestableProducts);
       els.exportRisky.addEventListener('click', exportRiskyProducts);
