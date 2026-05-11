@@ -611,8 +611,13 @@
           <option value="">导入 CSV 后自动识别</option>
         </select>
       </div>
+      <div class="control">
+        <label for="shippingRules">超重运费规则 kg:USD</label>
+        <input id="shippingRules" type="text" value="0.5:0,1:4.5,1.5:9,2:13.5,2.5:18,3:22.5">
+      </div>
       <div class="export-actions">
         <button class="btn secondary" id="exportPriorityBtn" type="button">导出优先测试清单 CSV</button>
+        <button class="btn secondary" id="exportTestableBtn" type="button">导出可测试清单 CSV</button>
         <button class="btn secondary" id="exportRiskyBtn" type="button">导出问题商品清单 CSV</button>
       </div>
     </section>
@@ -742,7 +747,9 @@
       otherCost: document.getElementById('otherCost'),
       targetMargin: document.getElementById('targetMargin'),
       costField: document.getElementById('costField'),
+      shippingRules: document.getElementById('shippingRules'),
       exportPriority: document.getElementById('exportPriorityBtn'),
+      exportTestable: document.getElementById('exportTestableBtn'),
       exportRisky: document.getElementById('exportRiskyBtn'),
       sort: document.getElementById('sortBy'),
       priority: document.getElementById('onlyPriority'),
@@ -764,30 +771,30 @@
     const VIDEO_KEYWORDS = ['sun protection', 'uv', 'cooling', 'breathable', 'slimming', '显瘦', '防晒', '透气', '凉感', '遮肉'];
     const LOCAL_MARKET_KEYWORDS = ['malaysia', 'my', 'muslimah', 'hijab', 'baju', 'kurung', 'raya', 'musim panas', 'nipis', 'ringan', '马来西亚'];
     const MACHINE_TRANSLATION_PATTERNS = [/women women/i, /fashion female/i, /explosion models/i, /foreign trade/i, /cross-border/i, /女士女/i, /女的/i, /外贸/i, /跨境/i, /爆款款/i];
-    const COST_FIELD_KEYWORDS = ['采购价', '成本价', '供货价', 'cost', 'purchase', 'wholesale', 'price', '价格'];
+    const COST_FIELD_KEYWORDS = ['采购价', '成本价', '供货价', '1688价格', '1688 Price', 'Cost', 'Purchase Price', 'Wholesale Price', 'Supplier Price'];
 
     const fieldNames = {
-      categoryId: ['分类id'],
-      title: ['产品标题'],
-      description: ['Tiktok产品描述', 'TikTok产品描述'],
+      categoryId: ['分类id', '分类ID', 'Category ID', 'Category Id', 'category_id'],
+      title: ['产品标题', 'Product Name', 'Product Title', 'Title'],
+      description: ['Tiktok产品描述', 'TikTok产品描述', 'Product Description', 'Description'],
       brand: ['品牌'],
-      sku: ['sku', 'SKU'],
+      sku: ['sku', 'SKU', 'Seller SKU', 'Seller Sku'],
       variant1: ['变种属性值一'],
       variant2: ['变种属性值二'],
       variant3: ['变种属性值三'],
-      price: ['价格(站点币种)'],
-      localPrice: ['本地展示价'],
-      stock: ['库存'],
-      mainImage: ['主图(url)地址'],
-      weight: ['重量(kg)'],
-      length: ['长'],
-      width: ['宽'],
-      height: ['高'],
+      price: ['价格(站点币种)', 'Price', 'Original Price'],
+      localPrice: ['本地展示价', 'Sale Price', 'Selling Price', 'Display Price'],
+      stock: ['库存', 'Stock', 'Inventory'],
+      mainImage: ['主图(url)地址', 'Main Image', 'Main Image URL', 'Image URL'],
+      weight: ['重量(kg)', 'Weight(kg)', 'Weight (kg)', 'Weight(g)', 'Weight (g)', 'Package Weight'],
+      length: ['长', 'Package Length(cm)', 'Length(cm)', 'Length'],
+      width: ['宽', 'Package Width(cm)', 'Width(cm)', 'Width'],
+      height: ['高', 'Package Height(cm)', 'Height(cm)', 'Height'],
       warehouse: ['仓库名称'],
       cod: ['货到付款'],
-      sourceUrl: ['来源Url', '来源URL', '来源url'],
+      sourceUrl: ['来源Url', '来源URL', '来源url', 'Source URL', '1688 URL', 'Product URL'],
       shopName: ['店铺名'],
-      productId: ['产品id'],
+      productId: ['产品id', '产品ID', 'Product ID', 'Product Id', 'product_id'],
       currency: ['店铺币种'],
       publishTime: ['平台刊登时间']
     };
@@ -799,8 +806,29 @@
         paymentRate: (toNumber(els.paymentRate.value) ?? 2) / 100,
         otherCost: toNumber(els.otherCost.value) ?? 0,
         targetMargin: (toNumber(els.targetMargin.value) ?? 30) / 100,
-        costField: els.costField.value
+        costField: els.costField.value,
+        shippingRules: parseShippingRules(els.shippingRules.value)
       };
+    }
+
+    function parseShippingRules(input) {
+      const fallback = [
+        { maxKg: 0.5, usd: 0 },
+        { maxKg: 1, usd: 4.5 },
+        { maxKg: 1.5, usd: 9 },
+        { maxKg: 2, usd: 13.5 },
+        { maxKg: 2.5, usd: 18 },
+        { maxKg: 3, usd: 22.5 }
+      ];
+      const rules = String(input || '')
+        .split(',')
+        .map((part) => {
+          const [kg, usd] = part.split(':').map((item) => toNumber(item));
+          return kg !== null && usd !== null ? { maxKg: kg, usd } : null;
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.maxKg - b.maxKg);
+      return rules.length ? rules : fallback;
     }
 
     function chooseDefaultCostField(headers) {
@@ -829,6 +857,33 @@
         if (Object.prototype.hasOwnProperty.call(row, name)) return String(row[name] ?? '').trim();
       }
       return '';
+    }
+
+    function fieldNameFor(row, key) {
+      const names = fieldNames[key] || [key];
+      for (const name of names) {
+        if (Object.prototype.hasOwnProperty.call(row, name)) return name;
+      }
+      return '';
+    }
+
+    function numericField(row, key) {
+      const field = fieldNameFor(row, key);
+      return {
+        field,
+        raw: field ? String(row[field] ?? '').trim() : '',
+        value: field ? toNumber(row[field]) : null
+      };
+    }
+
+    function normalizeWeightKg(rawValue, fieldName) {
+      const num = toNumber(rawValue);
+      if (num === null) return { value: null, suspectedGram: false };
+      const field = String(fieldName || '').toLowerCase();
+      if (/\bkg\b|公斤|千克/.test(field)) return { value: num, suspectedGram: false };
+      if (/\bg\b|gram|克/.test(field)) return { value: num / 1000, suspectedGram: false };
+      if (num > 20) return { value: num / 1000, suspectedGram: true };
+      return { value: num, suspectedGram: false };
     }
 
     function cleanNumberText(input) {
@@ -895,15 +950,10 @@
       return keywords.some((word) => haystack.includes(word.toLowerCase()));
     }
 
-    function extraShippingUsd(weight) {
+    function extraShippingUsd(weight, rules = parseShippingRules('')) {
       if (weight === null || weight === undefined) return null;
-      if (weight <= 0.5) return 0;
-      if (weight <= 1) return 4.5;
-      if (weight <= 1.5) return 9;
-      if (weight <= 2) return 13.5;
-      if (weight <= 2.5) return 18;
-      if (weight <= 3) return 22.5;
-      return 22.5;
+      const matched = rules.find((rule) => weight <= rule.maxKg);
+      return matched ? matched.usd : rules[rules.length - 1].usd;
     }
 
     function scoreLevel(score) {
@@ -1043,10 +1093,15 @@
       const prices = product.rows.map((row) => value(row, 'price'));
       const localPrices = product.rows.map((row) => value(row, 'localPrice'));
       const stocks = product.rows.map((row) => toNumber(value(row, 'stock')) || 0);
-      const weightValues = product.rows.map((row) => toNumber(value(row, 'weight')));
-      const lengthValues = product.rows.map((row) => toNumber(value(row, 'length')));
-      const widthValues = product.rows.map((row) => toNumber(value(row, 'width')));
-      const heightValues = product.rows.map((row) => toNumber(value(row, 'height')));
+      const weightInfos = product.rows.map((row) => {
+        const field = fieldNameFor(row, 'weight');
+        return normalizeWeightKg(field ? row[field] : '', field);
+      });
+      const weightValues = weightInfos.map((info) => info.value);
+      const suspectedGramWeight = weightInfos.some((info) => info.suspectedGram);
+      const lengthValues = product.rows.map((row) => numericField(row, 'length').value);
+      const widthValues = product.rows.map((row) => numericField(row, 'width').value);
+      const heightValues = product.rows.map((row) => numericField(row, 'height').value);
       const priceNums = prices.map(cleanPrice).filter((n) => n !== null);
       const localPriceNums = localPrices.map(cleanPrice).filter((n) => n !== null);
       const text = `${product.title} ${product.description}`;
@@ -1069,7 +1124,7 @@
       const minPrice = localPriceNums.length ? Math.min(...localPriceNums) : priceNums.length ? Math.min(...priceNums) : null;
       const maxPrice = localPriceNums.length ? Math.max(...localPriceNums) : priceNums.length ? Math.max(...priceNums) : null;
       const highPrice = maxPrice !== null && maxPrice > 100;
-      const shippingUsd = extraShippingUsd(weight);
+      const shippingUsd = extraShippingUsd(weight, config.shippingRules);
       const shippingMyr = shippingUsd === null ? null : shippingUsd * config.exchangeRate;
       const salePriceNums = localPriceNums.length ? localPriceNums : priceNums;
       const salePrice = salePriceNums.length ? Math.min(...salePriceNums) : null;
@@ -1095,14 +1150,23 @@
       const freightEatsProfit = shippingMyr !== null && estimatedProfit !== null && shippingMyr > estimatedProfit;
       const shippingProfitRisk = weight !== null && weight > 0.5 && minPrice !== null && minPrice < 35;
       const tags = [];
-      const hasAnyAbnormal = weightAnomaly || dimensionAnomaly || priceAnomaly || suspectedWeightError || missingInfo || skuCount > 8 || highPrice || shippingProfitRisk || titleQuality.issues.length > 0 || profitLoss || profitLow || profitUnknown || freightEatsProfit;
+      const mainImageMissing = !hasMainImage;
+      const sourceMissing = !hasSource;
+      const priceMissing = !hasPrice;
+      const costMissing = costPrice === null;
+      const skuTooMany = skuCount > 8;
+      const overweight = !weightAnomaly && weight > 0.5;
+      const hardRisk = profitLoss || profitLow || weightAnomaly || suspectedWeightError || dimensionAnomaly || priceAnomaly || mainImageMissing || sourceMissing || priceMissing || costMissing || skuTooMany || freightEatsProfit;
+      const softOptimization = titleQuality.issues.length > 0 || suspectedGramWeight || highPrice || shippingProfitRisk || overweight;
+      const hasAnyAbnormal = hardRisk;
 
       if (weightAnomaly) tags.push('重量异常');
+      if (suspectedGramWeight) tags.push('疑似克重');
       if (dimensionAnomaly) tags.push('尺寸异常');
       if (priceAnomaly) tags.push('价格异常');
-      if (!weightAnomaly && weight > 0.5) tags.push('重量风险');
+      if (overweight) tags.push('重量风险');
       if (suspectedWeightError) tags.push('疑似重量填错');
-      if (skuCount > 8) tags.push('SKU复杂');
+      if (skuTooMany) tags.push('SKU复杂');
       if (missingInfo) tags.push('信息缺失');
       if (highPrice) tags.push('价格偏高');
       if (profitHealthy) tags.push('利润健康');
@@ -1123,14 +1187,14 @@
       if (hasMainImage) score += 5;
       if (hasSource) score += 5;
       if (summerMatch) score += 5;
-      if (weight > 0.5) score -= 20;
+      if (overweight) score -= 20;
       if (suspectedWeightError) score -= 15;
       if (skuCount > 8) score -= 10;
       if (missingInfo) score -= 20;
-      if (titleQuality.tooLong) score -= 6;
-      if (titleQuality.machineTranslated) score -= 6;
-      if (!titleQuality.localFit) score -= 4;
-      if (!titleQuality.hasSellingPoint) score -= 4;
+      if (titleQuality.tooLong) score -= 2;
+      if (titleQuality.machineTranslated) score -= 2;
+      if (!titleQuality.localFit) score -= 2;
+      if (!titleQuality.hasSellingPoint) score -= 2;
       if (highPrice) score -= 5;
       if (weightAnomaly) score -= 20;
       if (dimensionAnomaly) score -= 15;
@@ -1144,7 +1208,9 @@
 
       const stockTotal = stocks.reduce((sum, n) => sum + n, 0);
       let level = scoreLevel(score);
-      if (hasAnyAbnormal) {
+      if (!hardRisk && profitHealthy && weight > 0 && weight <= 0.5 && skuCount <= 8) {
+        level = '优先测试';
+      } else if (hasAnyAbnormal) {
         level = score >= 60 ? '可测试但需检查' : '暂缓上架';
       }
       if (weightAnomaly) {
@@ -1187,6 +1253,15 @@
         titleQuality,
         suspectedWeightError,
         weightAnomaly,
+        suspectedGramWeight,
+        hardRisk,
+        softOptimization,
+        mainImageMissing,
+        sourceMissing,
+        priceMissing,
+        costMissing,
+        skuTooMany,
+        overweight,
         dimensionAnomaly,
         priceAnomaly,
         shippingProfitRisk,
@@ -1524,10 +1599,32 @@
       downloadCsv(`priority-products-${todayString()}.csv`, headers, rows);
     }
 
+    function exportTestableProducts() {
+      const headers = ['产品id', '产品标题', 'SKU 数', '售价区间', '采购价', '重量', '额外运费 MYR', '预估利润', '预估利润率', '推荐等级', '处理建议', '来源Url', '主图地址'];
+      const rows = state.products
+        .filter((product) => product.level === '优先测试' || product.level === '可测试但需检查')
+        .map((product) => ({
+          '产品id': product.productId || '',
+          '产品标题': product.title || '',
+          'SKU 数': product.skuCount,
+          '售价区间': product.salePriceRange || '',
+          '采购价': product.costPrice === null ? '' : formatNum(product.costPrice),
+          '重量': product.weightDisplay,
+          '额外运费 MYR': product.shippingMyr === null ? '' : formatNum(product.shippingMyr),
+          '预估利润': product.estimatedProfit === null ? '' : formatNum(product.estimatedProfit),
+          '预估利润率': product.profitMargin === null ? '' : `${formatNum(product.profitMargin * 100)}%`,
+          '推荐等级': product.level,
+          '处理建议': handlingAdvice(product),
+          '来源Url': product.sourceUrl || '',
+          '主图地址': product.mainImage || ''
+        }));
+      downloadCsv(`testable-products-${todayString()}.csv`, headers, rows);
+    }
+
     function exportRiskyProducts() {
       const headers = ['产品id', '产品标题', '问题标签', '重量', '尺寸', '售价', '采购价', '额外运费 MYR', '预估利润', '预估利润率', '处理建议', '来源Url'];
       const rows = state.products
-        .filter((product) => product.abnormal || product.level !== '优先测试')
+        .filter((product) => product.hardRisk)
         .map((product) => ({
           '产品id': product.productId || '',
           '产品标题': product.title || '',
@@ -1645,7 +1742,9 @@
       els.otherCost.addEventListener('input', recalculateProducts);
       els.targetMargin.addEventListener('input', recalculateProducts);
       els.costField.addEventListener('change', recalculateProducts);
+      els.shippingRules.addEventListener('input', recalculateProducts);
       els.exportPriority.addEventListener('click', exportPriorityProducts);
+      els.exportTestable.addEventListener('click', exportTestableProducts);
       els.exportRisky.addEventListener('click', exportRiskyProducts);
       els.sort.addEventListener('change', renderProducts);
       els.priority.addEventListener('change', renderProducts);
