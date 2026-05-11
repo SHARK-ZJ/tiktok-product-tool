@@ -90,7 +90,7 @@
 
     .rate-box {
       display: grid;
-      grid-template-columns: 72px 96px 44px minmax(76px, 1fr);
+      grid-template-columns: 72px 104px 44px minmax(76px, 1fr);
       gap: 8px;
       align-items: center;
       min-width: 0;
@@ -110,15 +110,31 @@
       white-space: nowrap;
     }
 
-    .rate-box input {
-      width: 96px;
-      min-width: 0;
+    .rate-box #exchangeRate,
+    .rate-box #rmbRate {
+      width: 104px;
+      min-width: 104px;
+      max-width: 104px;
+      height: 38px;
       padding: 8px 10px;
       border: 1px solid #d5dde7;
       border-radius: 6px;
       text-align: right;
       background: #f8fafc;
       font-weight: 800;
+    }
+
+    .rate-box #exchangeRate::-webkit-outer-spin-button,
+    .rate-box #exchangeRate::-webkit-inner-spin-button,
+    .rate-box #rmbRate::-webkit-outer-spin-button,
+    .rate-box #rmbRate::-webkit-inner-spin-button {
+      margin: 0;
+      -webkit-appearance: none;
+    }
+
+    .rate-box #exchangeRate,
+    .rate-box #rmbRate {
+      appearance: textfield;
     }
 
     .rate-updated {
@@ -613,7 +629,7 @@
       .card-main,
       .side { grid-template-columns: 1fr; }
       .rate-panel { width: 100%; min-width: 0; box-shadow: none; }
-      .rate-box { grid-template-columns: 64px minmax(84px, 1fr) 40px; }
+      .rate-box { grid-template-columns: 64px 104px 40px; }
       .rate-box .rate-meta { grid-column: 1 / -1; justify-self: start; }
       .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
