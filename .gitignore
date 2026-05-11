@@ -3,3 +3,7 @@
 !404.html
 !.gitignore
 !.nojekyll
+!scripts/
+!scripts/**
+scripts/**/__pycache__/
+scripts/**/*.pyc
