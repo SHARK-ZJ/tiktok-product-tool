@@ -81,6 +81,13 @@
       white-space: nowrap;
     }
 
+    .rate-box .rate-meta {
+      grid-column: 1 / -1;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
     .rate-box input {
       width: 92px;
       padding: 8px 10px;
@@ -566,12 +573,18 @@
         <span>1 USD =</span>
         <input id="exchangeRate" type="number" min="0" step="0.01" value="4.7">
         <span>MYR</span>
+        <span class="rate-meta" id="usdRateMode">自动汇率</span>
       </label>
       <label class="rate-box">
         <span>1 RMB =</span>
         <input id="rmbRate" type="number" min="0" step="0.01" value="0.65">
         <span>MYR</span>
+        <span class="rate-meta" id="rmbRateMode">自动汇率</span>
       </label>
+      <div class="rate-box">
+        <span>汇率更新时间</span>
+        <strong id="rateUpdatedAt">-</strong>
+      </div>
     </section>
 
     <section class="import-panel">
@@ -754,6 +767,9 @@
       list: document.getElementById('productList'),
       rate: document.getElementById('exchangeRate'),
       rmbRate: document.getElementById('rmbRate'),
+      usdRateMode: document.getElementById('usdRateMode'),
+      rmbRateMode: document.getElementById('rmbRateMode'),
+      rateUpdatedAt: document.getElementById('rateUpdatedAt'),
       commissionRate: document.getElementById('commissionRate'),
       paymentRate: document.getElementById('paymentRate'),
       otherCost: document.getElementById('otherCost'),
@@ -777,6 +793,9 @@
     };
 
     const state = { rows: [], products: [], headers: [], costRows: [], costMap: new Map() };
+    const RATE_CACHE_KEY = 'tiktokSkuRiskRatesV1';
+    const DEFAULT_RATES = { usdToMyr: 4.7, rmbToMyr: 0.65, updatedAt: '' };
+    const rateState = { usdManual: false, rmbManual: false, source: 'default' };
 
     const SUMMER_KEYWORDS = ['nipis', 'musim panas', 'pelindung matahari', 'ringan', 'breathable', 'sun protection', 'thin', 'lightweight', 'cooling', '透气', '轻薄', '防晒', '夏季', '凉感'];
     const LIGHT_CLOTHES_KEYWORDS = ['t-shirt', 'baju-t', 'tee', 'nipis', 'ringan', 'thin', '薄', '轻薄', '透气', '短袖'];
@@ -828,6 +847,75 @@
         costField: els.costField.value,
         shippingRules: parseShippingRules(els.shippingRules.value)
       };
+    }
+
+    function formatDateTime(timestamp) {
+      if (!timestamp) return '-';
+      const date = new Date(timestamp);
+      if (Number.isNaN(date.getTime())) return '-';
+      const pad = (num) => String(num).padStart(2, '0');
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    }
+
+    function readCachedRates() {
+      try {
+        const cached = JSON.parse(localStorage.getItem(RATE_CACHE_KEY) || 'null');
+        if (!cached) return null;
+        const usdToMyr = toNumber(cached.usdToMyr);
+        const rmbToMyr = toNumber(cached.rmbToMyr);
+        if (usdToMyr === null || rmbToMyr === null) return null;
+        return { usdToMyr, rmbToMyr, updatedAt: cached.updatedAt || '' };
+      } catch (error) {
+        return null;
+      }
+    }
+
+    function cacheRates(rates) {
+      try {
+        localStorage.setItem(RATE_CACHE_KEY, JSON.stringify(rates));
+      } catch (error) {
+        return;
+      }
+    }
+
+    function setRateInputs(rates, source = 'auto') {
+      if (!rateState.usdManual) els.rate.value = formatNum(rates.usdToMyr, 4);
+      if (!rateState.rmbManual) els.rmbRate.value = formatNum(rates.rmbToMyr, 4);
+      rateState.source = source;
+      updateRateMeta(rates.updatedAt, source);
+      recalculateProducts();
+    }
+
+    function updateRateMeta(updatedAt = '', source = rateState.source) {
+      els.usdRateMode.textContent = rateState.usdManual ? '手动汇率' : source === 'auto' ? '自动汇率' : source === 'cache' ? '缓存汇率' : '默认汇率';
+      els.rmbRateMode.textContent = rateState.rmbManual ? '手动汇率' : source === 'auto' ? '自动汇率' : source === 'cache' ? '缓存汇率' : '默认汇率';
+      els.rateUpdatedAt.textContent = formatDateTime(updatedAt);
+    }
+
+    async function fetchLatestRates() {
+      const response = await fetch('https://open.er-api.com/v6/latest/USD', { cache: 'no-store' });
+      if (!response.ok) throw new Error('汇率接口请求失败');
+      const data = await response.json();
+      const usdToMyr = toNumber(data?.rates?.MYR);
+      const cnyRate = toNumber(data?.rates?.CNY);
+      if (usdToMyr === null || cnyRate === null || cnyRate <= 0) throw new Error('汇率接口数据不完整');
+      return {
+        usdToMyr,
+        rmbToMyr: usdToMyr / cnyRate,
+        updatedAt: data.time_last_update_unix ? new Date(data.time_last_update_unix * 1000).toISOString() : new Date().toISOString()
+      };
+    }
+
+    async function initExchangeRates() {
+      const cached = readCachedRates();
+      setRateInputs(cached || DEFAULT_RATES, cached ? 'cache' : 'default');
+      try {
+        const latest = await fetchLatestRates();
+        cacheRates(latest);
+        setRateInputs(latest, 'auto');
+      } catch (error) {
+        updateRateMeta((cached || DEFAULT_RATES).updatedAt, cached ? 'cache' : 'default');
+      }
     }
 
     function parseShippingRules(input) {
@@ -2040,8 +2128,16 @@
       renderSummary([], []);
       els.parse.addEventListener('click', handleParse);
       els.clear.addEventListener('click', resetAll);
-      els.rate.addEventListener('input', recalculateProducts);
-      els.rmbRate.addEventListener('input', recalculateProducts);
+      els.rate.addEventListener('input', () => {
+        rateState.usdManual = true;
+        updateRateMeta();
+        recalculateProducts();
+      });
+      els.rmbRate.addEventListener('input', () => {
+        rateState.rmbManual = true;
+        updateRateMeta();
+        recalculateProducts();
+      });
       els.commissionRate.addEventListener('input', recalculateProducts);
       els.paymentRate.addEventListener('input', recalculateProducts);
       els.otherCost.addEventListener('input', recalculateProducts);
@@ -2065,6 +2161,7 @@
         if (!button) return;
         copyText(button.dataset.copy, button);
       });
+      initExchangeRates();
     }
 
     init();
