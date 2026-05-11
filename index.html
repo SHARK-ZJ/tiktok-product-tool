@@ -571,10 +571,10 @@
 
     <section class="import-panel">
       <div class="field">
-        <label for="csvFile">上传 CSV 文件</label>
+        <label for="csvFile">上传 CSV / XLSX 文件</label>
         <div class="file-zone">
-          <input id="csvFile" type="file" accept=".csv,text/csv">
-          <p class="hint">优先支持 UTF-8，并会尝试识别 GBK / GB18030。如果仍乱码，请另存为 CSV UTF-8 再上传。</p>
+          <input id="csvFile" type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+          <p class="hint">CSV 优先支持 UTF-8，并会尝试识别 GBK / GB18030；TikTok 批量编辑 .xlsx 会自动跳过说明行。如果仍乱码，请另存为 CSV UTF-8 再上传。</p>
         </div>
       </div>
       <div class="field">
@@ -774,27 +774,27 @@
     const COST_FIELD_KEYWORDS = ['采购价', '成本价', '供货价', '1688价格', '1688 Price', 'Cost', 'Purchase Price', 'Wholesale Price', 'Supplier Price'];
 
     const fieldNames = {
-      categoryId: ['分类id', '分类ID', 'Category ID', 'Category Id', 'category_id'],
-      title: ['产品标题', 'Product Name', 'Product Title', 'Title'],
-      description: ['Tiktok产品描述', 'TikTok产品描述', 'Product Description', 'Description'],
-      brand: ['品牌'],
-      sku: ['sku', 'SKU', 'Seller SKU', 'Seller Sku'],
-      variant1: ['变种属性值一'],
+      categoryId: ['分类id', '分类ID', 'Category ID', 'Category Id', 'category_id', 'category', '类目', 'Category'],
+      title: ['产品标题', 'Product Name', 'Product Title', 'Title', 'product_name', '商品名称'],
+      description: ['Tiktok产品描述', 'TikTok产品描述', 'Product Description', 'Description', 'product_description', '商品描述'],
+      brand: ['品牌', 'brand'],
+      sku: ['sku', 'SKU', 'Seller SKU', 'Seller Sku', 'sku_id', 'seller_sku', 'SKU ID', '商家 SKU'],
+      variant1: ['变种属性值一', 'variation_value', '销售变体选项', 'Variation'],
       variant2: ['变种属性值二'],
       variant3: ['变种属性值三'],
-      price: ['价格(站点币种)', 'Price', 'Original Price'],
+      price: ['价格(站点币种)', 'Price', 'Original Price', 'price', '零售价（本地币种）'],
       localPrice: ['本地展示价', 'Sale Price', 'Selling Price', 'Display Price'],
-      stock: ['库存', 'Stock', 'Inventory'],
-      mainImage: ['主图(url)地址', 'Main Image', 'Main Image URL', 'Image URL'],
-      weight: ['重量(kg)', 'Weight(kg)', 'Weight (kg)', 'Weight(g)', 'Weight (g)', 'Package Weight'],
-      length: ['长', 'Package Length(cm)', 'Length(cm)', 'Length'],
-      width: ['宽', 'Package Width(cm)', 'Width(cm)', 'Width'],
-      height: ['高', 'Package Height(cm)', 'Height(cm)', 'Height'],
+      stock: ['库存', 'Stock', 'Inventory', 'warehouse_quantity'],
+      mainImage: ['主图(url)地址', 'Main Image', 'Main Image URL', 'Image URL', 'main_image', '主图'],
+      weight: ['重量(kg)', 'Weight(kg)', 'Weight (kg)', 'Weight(g)', 'Weight (g)', 'Package Weight', 'parcel_weight', '包裹重量(g)'],
+      length: ['长', 'Package Length(cm)', 'Length(cm)', 'Length', 'parcel_length', '包裹长度(cm)'],
+      width: ['宽', 'Package Width(cm)', 'Width(cm)', 'Width', 'parcel_width', '包裹宽度(cm)'],
+      height: ['高', 'Package Height(cm)', 'Height(cm)', 'Height', 'parcel_height', '包裹高度(cm)'],
       warehouse: ['仓库名称'],
-      cod: ['货到付款'],
+      cod: ['货到付款', 'cod'],
       sourceUrl: ['来源Url', '来源URL', '来源url', 'Source URL', '1688 URL', 'Product URL'],
       shopName: ['店铺名'],
-      productId: ['产品id', '产品ID', 'Product ID', 'Product Id', 'product_id'],
+      productId: ['产品id', '产品ID', 'Product ID', 'Product Id', 'product_id', '商品 ID', '商品ID'],
       currency: ['店铺币种'],
       publishTime: ['平台刊登时间']
     };
@@ -851,20 +851,38 @@
       els.costField.value = selected;
     }
 
-    function value(row, key) {
-      const names = fieldNames[key] || [key];
-      for (const name of names) {
-        if (Object.prototype.hasOwnProperty.call(row, name)) return String(row[name] ?? '').trim();
-      }
-      return '';
+    function normalizeHeaderName(name) {
+      return String(name || '').trim().toLowerCase();
     }
 
-    function fieldNameFor(row, key) {
+    function dynamicFieldMatch(header, key) {
+      const normalized = normalizeHeaderName(header);
+      return key === 'stock' && normalized.startsWith('warehouse_quantity/');
+    }
+
+    function findField(row, key) {
       const names = fieldNames[key] || [key];
+      const headers = Object.keys(row || {});
       for (const name of names) {
         if (Object.prototype.hasOwnProperty.call(row, name)) return name;
       }
-      return '';
+      const normalizedNames = names.map(normalizeHeaderName);
+      const caseMatch = headers.find((header) => normalizedNames.includes(normalizeHeaderName(header)));
+      if (caseMatch) return caseMatch;
+      return headers.find((header) => dynamicFieldMatch(header, key)) || '';
+    }
+
+    function value(row, key) {
+      const field = findField(row, key);
+      return field ? String(row[field] ?? '').trim() : '';
+    }
+
+    function fieldNameFor(row, key) {
+      return findField(row, key);
+    }
+
+    function hasField(row, key) {
+      return Boolean(findField(row, key));
     }
 
     function numericField(row, key) {
@@ -885,6 +903,7 @@
       const num = toNumber(rawValue);
       if (num === null) return { value: null, suspectedGram: false };
       const field = String(fieldName || '').toLowerCase();
+      if (field === 'parcel_weight') return { value: num / 1000, suspectedGram: false };
       if (/\bkg\b|公斤|千克/.test(field)) return { value: num, suspectedGram: false };
       if (/\bg\b|gram|克/.test(field)) return { value: num / 1000, suspectedGram: false };
       if (num > 20) return { value: num / 1000, suspectedGram: true };
@@ -990,6 +1009,126 @@
       });
     }
 
+    function readUint16(bytes, offset) {
+      return bytes[offset] | (bytes[offset + 1] << 8);
+    }
+
+    function readUint32(bytes, offset) {
+      return (bytes[offset] | (bytes[offset + 1] << 8) | (bytes[offset + 2] << 16) | (bytes[offset + 3] << 24)) >>> 0;
+    }
+
+    async function inflateRaw(deflatedBytes) {
+      if (typeof DecompressionStream === 'undefined') {
+        throw new Error('当前浏览器不支持本地解压 .xlsx，请另存为 CSV UTF-8 后上传。');
+      }
+      const stream = new Blob([deflatedBytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+      return new Uint8Array(await new Response(stream).arrayBuffer());
+    }
+
+    async function unzipXlsxEntries(buffer) {
+      const bytes = new Uint8Array(buffer);
+      let eocdOffset = -1;
+      for (let i = bytes.length - 22; i >= 0; i -= 1) {
+        if (readUint32(bytes, i) === 0x06054b50) {
+          eocdOffset = i;
+          break;
+        }
+      }
+      if (eocdOffset < 0) throw new Error('无法读取 .xlsx 文件结构，请另存为 CSV UTF-8 后上传。');
+      const entryCount = readUint16(bytes, eocdOffset + 10);
+      let offset = readUint32(bytes, eocdOffset + 16);
+      const decoder = new TextDecoder('utf-8');
+      const entries = new Map();
+
+      for (let i = 0; i < entryCount; i += 1) {
+        if (readUint32(bytes, offset) !== 0x02014b50) break;
+        const method = readUint16(bytes, offset + 10);
+        const compressedSize = readUint32(bytes, offset + 20);
+        const nameLength = readUint16(bytes, offset + 28);
+        const extraLength = readUint16(bytes, offset + 30);
+        const commentLength = readUint16(bytes, offset + 32);
+        const localOffset = readUint32(bytes, offset + 42);
+        const name = decoder.decode(bytes.slice(offset + 46, offset + 46 + nameLength));
+        const localNameLength = readUint16(bytes, localOffset + 26);
+        const localExtraLength = readUint16(bytes, localOffset + 28);
+        const dataStart = localOffset + 30 + localNameLength + localExtraLength;
+        const compressed = bytes.slice(dataStart, dataStart + compressedSize);
+        let data;
+        if (method === 0) {
+          data = compressed;
+        } else if (method === 8) {
+          data = await inflateRaw(compressed);
+        } else {
+          throw new Error('暂不支持该 .xlsx 压缩格式，请另存为 CSV UTF-8 后上传。');
+        }
+        entries.set(name, decoder.decode(data));
+        offset += 46 + nameLength + extraLength + commentLength;
+      }
+      return entries;
+    }
+
+    function decodeXmlText(text) {
+      return String(text || '')
+        .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&apos;/g, "'")
+        .replace(/&amp;/g, '&');
+    }
+
+    function parseSharedStrings(xml) {
+      if (!xml) return [];
+      return [...xml.matchAll(/<si\b[\s\S]*?<\/si>/g)].map((match) => {
+        const parts = [...match[0].matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)].map((part) => decodeXmlText(part[1]));
+        return parts.join('');
+      });
+    }
+
+    function columnIndexFromRef(ref) {
+      const letters = String(ref || '').match(/[A-Z]+/i);
+      if (!letters) return 0;
+      return [...letters[0].toUpperCase()].reduce((sum, char) => sum * 26 + char.charCodeAt(0) - 64, 0) - 1;
+    }
+
+    function parseWorksheetRows(xml, sharedStrings) {
+      const rows = [];
+      for (const rowMatch of xml.matchAll(/<row\b[^>]*>([\s\S]*?)<\/row>/g)) {
+        const row = [];
+        for (const cellMatch of rowMatch[1].matchAll(/<c\b([^>]*)>([\s\S]*?)<\/c>/g)) {
+          const attrs = cellMatch[1];
+          const body = cellMatch[2];
+          const ref = (attrs.match(/\br="([^"]+)"/) || [])[1] || '';
+          const type = (attrs.match(/\bt="([^"]+)"/) || [])[1] || '';
+          const valueMatch = body.match(/<v>([\s\S]*?)<\/v>/);
+          const inlineMatch = body.match(/<t\b[^>]*>([\s\S]*?)<\/t>/);
+          let cellValue = valueMatch ? decodeXmlText(valueMatch[1]) : inlineMatch ? decodeXmlText(inlineMatch[1]) : '';
+          if (type === 's') cellValue = sharedStrings[Number(cellValue)] || '';
+          row[columnIndexFromRef(ref)] = cellValue;
+        }
+        rows.push(row.map((cell) => String(cell ?? '').trim()));
+      }
+      return rows;
+    }
+
+    async function parseXlsxBuffer(buffer) {
+      const entries = await unzipXlsxEntries(buffer);
+      const sheetXml = entries.get('xl/worksheets/sheet1.xml') || [...entries.entries()].find(([name]) => /^xl\/worksheets\/sheet\d+\.xml$/.test(name))?.[1];
+      if (!sheetXml) throw new Error('未找到 .xlsx 工作表，请另存为 CSV UTF-8 后上传。');
+      const sharedStrings = parseSharedStrings(entries.get('xl/sharedStrings.xml') || '');
+      const tableRows = parseWorksheetRows(sheetXml, sharedStrings);
+      const headers = (tableRows[0] || []).map((header) => String(header || '').trim());
+      const dataRows = tableRows.slice(5);
+      const data = dataRows.map((cells) => {
+        const row = {};
+        headers.forEach((header, index) => {
+          if (header) row[header] = cells[index] || '';
+        });
+        return row;
+      }).filter((row) => Object.values(row).some((cell) => String(cell ?? '').trim()));
+      return { data, meta: { fields: headers.filter(Boolean) } };
+    }
+
     function looksLikeEncodingIssue(text) {
       const sample = String(text || '').slice(0, 1500);
       const badCount = (sample.match(/\uFFFD/g) || []).length;
@@ -999,8 +1138,12 @@
 
     async function readSelectedFile() {
       const file = els.file.files && els.file.files[0];
-      if (!file) return { text: '', encoding: '' };
+      if (!file) return { text: '', encoding: '', result: null };
       const buffer = await file.arrayBuffer();
+      const fileName = String(file.name || '').toLowerCase();
+      if (fileName.endsWith('.xlsx')) {
+        return { text: '', encoding: 'XLSX', result: await parseXlsxBuffer(buffer) };
+      }
       const utf8Text = new TextDecoder('utf-8', { fatal: false }).decode(buffer);
       if (!looksLikeEncodingIssue(utf8Text)) return { text: utf8Text, encoding: 'UTF-8' };
 
@@ -1112,6 +1255,7 @@
       const hasMainImage = Boolean(product.mainImage);
       const hasPrice = priceNums.length > 0 || localPriceNums.length > 0;
       const hasWeight = weightValues.some((n) => n !== null);
+      const hasSourceField = product.rows.some((row) => hasField(row, 'sourceUrl'));
       const hasSource = Boolean(product.sourceUrl);
       const summerMatch = hasAnyKeyword(text, SUMMER_KEYWORDS);
       const titleQuality = assessTitle(product.title, product.description);
@@ -1122,7 +1266,7 @@
         return raw && cleanPrice(raw) === null;
       });
       const suspectedWeightError = hasAnyKeyword(text, LIGHT_CLOTHES_KEYWORDS) && weight > 0 && weight >= 0.8;
-      const missingInfo = !hasMainImage || !hasPrice || !hasWeight || !hasSource;
+      const missingInfo = !hasMainImage || !hasPrice || !hasWeight || (hasSourceField && !hasSource);
       const minPrice = localPriceNums.length ? Math.min(...localPriceNums) : priceNums.length ? Math.min(...priceNums) : null;
       const maxPrice = localPriceNums.length ? Math.max(...localPriceNums) : priceNums.length ? Math.max(...priceNums) : null;
       const highPrice = maxPrice !== null && maxPrice > 100;
@@ -1153,7 +1297,7 @@
       const shippingProfitRisk = weight !== null && weight > 0.5 && minPrice !== null && minPrice < 35;
       const tags = [];
       const mainImageMissing = !hasMainImage;
-      const sourceMissing = !hasSource;
+      const sourceMissing = hasSourceField && !hasSource;
       const priceMissing = !hasPrice;
       const costMissing = costPrice === null;
       const skuTooMany = skuCount > 8;
@@ -1648,23 +1792,23 @@
     }
 
     async function handleParse() {
-      els.status.textContent = '正在读取 CSV...';
+      els.status.textContent = '正在读取 CSV / XLSX...';
       els.status.className = 'status';
       try {
         const pasted = els.text.value.trim();
-        const fileResult = pasted ? { text: '', encoding: '' } : await readSelectedFile();
+        const fileResult = pasted ? { text: '', encoding: '', result: null } : await readSelectedFile();
         const csvText = pasted || fileResult.text;
-        if (!csvText.trim()) {
-          els.status.textContent = '请先上传 CSV 文件或粘贴 CSV 文本。';
+        if (!csvText.trim() && !fileResult.result) {
+          els.status.textContent = '请先上传 CSV / XLSX 文件或粘贴 CSV 文本。';
           els.status.className = 'status error';
           return;
         }
-        if (looksLikeEncodingIssue(csvText)) {
+        if (csvText && looksLikeEncodingIssue(csvText)) {
           els.status.textContent = 'CSV 可能仍存在乱码，请另存为 CSV UTF-8 再上传。';
           els.status.className = 'status error';
         }
 
-        const result = parseCsvText(csvText);
+        const result = fileResult.result || parseCsvText(csvText);
         const rows = result.data.filter((row) => Object.values(row).some((cell) => String(cell ?? '').trim()));
         state.rows = rows;
         state.headers = result.meta && result.meta.fields && result.meta.fields.length
@@ -1675,12 +1819,12 @@
         renderSummary(state.products, state.rows);
         renderProducts();
         const encodingText = fileResult.encoding ? `，识别编码：${fileResult.encoding}` : '';
-        if (!looksLikeEncodingIssue(csvText)) {
+        if (!csvText || !looksLikeEncodingIssue(csvText)) {
           els.status.textContent = `解析完成：${state.products.length} 个产品，${state.rows.length} 个 SKU${encodingText}。`;
           els.status.className = 'status ok';
         }
       } catch (error) {
-        els.status.textContent = error.message || 'CSV 解析失败。请另存为 CSV UTF-8 再上传。';
+        els.status.textContent = error.message || 'CSV / XLSX 解析失败。请另存为 CSV UTF-8 再上传。';
         els.status.className = 'status error';
       }
     }
