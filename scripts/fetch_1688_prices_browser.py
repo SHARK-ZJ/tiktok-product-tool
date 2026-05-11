@@ -43,7 +43,7 @@ from fetch_1688_prices import (
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Fetch 1688 costs with a logged-in browser session.")
-    parser.add_argument("input", help="Input CSV/XLSX containing 来源Url or 1688 URL.")
+    parser.add_argument("input", nargs="?", help="Input CSV/XLSX containing 来源Url or 1688 URL.")
     parser.add_argument("-o", "--output", default="1688-cost-table.csv", help="Output CSV path.")
     parser.add_argument("--profile-dir", default=".1688-browser-profile", help="Persistent browser profile directory.")
     parser.add_argument("--min-wait", type=float, default=1.0, help="Minimum random wait seconds between URLs.")
@@ -52,14 +52,40 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--force", action="store_true", help="Ignore successful rows in existing output and fetch again.")
     parser.add_argument("--headless", action="store_true", help="Run browser headless. Not recommended for first login.")
     parser.add_argument("--skip-login-prompt", action="store_true", help="Do not wait for manual login before fetching.")
+    parser.add_argument("--login-only", action="store_true", help="Only open the 1688 login page and save browser session.")
+    parser.add_argument("--channel", choices=["chromium", "chrome", "msedge"], default="chromium", help="Browser channel to use.")
     return parser.parse_args()
 
 
 def wait_for_login(page) -> None:
-    page.goto("https://www.1688.com/", wait_until="domcontentloaded", timeout=60000)
-    print("\n浏览器已打开。请在浏览器里完成 1688 登录 / 验证。")
-    print("确认已经登录后，回到这个窗口按 Enter 继续抓取。")
+    login_url = "https://login.1688.com/member/signin.htm?Done=https%3A%2F%2Fwww.1688.com%2F"
+    page.goto(login_url, wait_until="domcontentloaded", timeout=60000)
+    try:
+        page.bring_to_front()
+    except Exception:
+        pass
+    print("\n浏览器已打开 1688 登录页。")
+    print("如果你没看到浏览器窗口，请检查任务栏里是否有 Chromium / Chrome / Edge 图标。")
+    print("请在浏览器里完成 1688 登录 / 验证。")
+    print("确认已经登录后，回到这个命令行窗口按 Enter。")
     input("按 Enter 继续...")
+
+
+def launch_context(playwright, args):
+    browser_type = playwright.chromium
+    launch_kwargs = {
+        "user_data_dir": args.profile_dir,
+        "headless": args.headless,
+        "viewport": None,
+        "locale": "zh-CN",
+        "args": [
+            "--start-maximized",
+            "--disable-blink-features=AutomationControlled",
+        ],
+    }
+    if args.channel != "chromium":
+        launch_kwargs["channel"] = args.channel
+    return browser_type.launch_persistent_context(**launch_kwargs)
 
 
 def fetch_with_browser(page, url: str):
@@ -90,6 +116,19 @@ def fetch_with_browser(page, url: str):
 
 def main() -> int:
     args = parse_args()
+    if not args.input and not args.login_only:
+        print("请提供输入表格文件，或使用 --login-only 先打开浏览器登录 1688。", file=sys.stderr)
+        return 2
+
+    if args.login_only:
+        with sync_playwright() as p:
+            context = launch_context(p, args)
+            page = context.pages[0] if context.pages else context.new_page()
+            wait_for_login(page)
+            print("登录态已保存。之后运行抓取命令会复用这个浏览器登录态。")
+            context.close()
+        return 0
+
     input_path = Path(args.input)
     output_path = Path(args.output)
     if not input_path.exists():
@@ -108,13 +147,7 @@ def main() -> int:
         return 0
 
     with sync_playwright() as p:
-        context = p.chromium.launch_persistent_context(
-            user_data_dir=args.profile_dir,
-            headless=args.headless,
-            viewport={"width": 1366, "height": 900},
-            locale="zh-CN",
-            args=["--disable-blink-features=AutomationControlled"],
-        )
+        context = launch_context(p, args)
         page = context.pages[0] if context.pages else context.new_page()
         if not args.skip_login_prompt and not args.headless:
             wait_for_login(page)

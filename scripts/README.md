@@ -23,15 +23,31 @@ python scripts\fetch_1688_prices.py "店小秘产品表.xlsx" -o "1688-cost-tabl
 ```powershell
 pip install playwright
 python -m playwright install chromium
+python scripts\fetch_1688_prices_browser.py --login-only
 python scripts\fetch_1688_prices_browser.py "店小秘产品表.xlsx" -o "1688-cost-table.csv"
 ```
 
-运行后会打开浏览器。你需要：
+第一条命令只打开 1688 登录页，不抓表格。你需要：
 
 1. 在打开的浏览器里登录 1688。
 2. 如果出现验证码/验证，手动完成。
-3. 回到命令行窗口按 Enter。
-4. 脚本继续批量打开 1688 商品页抓价。
+3. 回到命令行窗口按 Enter，让脚本保存登录态。
+
+第二条命令才开始批量打开 1688 商品页抓价。
+
+如果你想用本机 Chrome 或 Edge 打开：
+
+```powershell
+python scripts\fetch_1688_prices_browser.py --login-only --channel chrome
+python scripts\fetch_1688_prices_browser.py "店小秘产品表.xlsx" -o "1688-cost-table.csv" --channel chrome
+```
+
+或者：
+
+```powershell
+python scripts\fetch_1688_prices_browser.py --login-only --channel msedge
+python scripts\fetch_1688_prices_browser.py "店小秘产品表.xlsx" -o "1688-cost-table.csv" --channel msedge
+```
 
 浏览器登录态会保存在：
 
