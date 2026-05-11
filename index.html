@@ -68,21 +68,27 @@
       font-size: 15px;
     }
 
+    .rate-panel {
+      display: grid;
+      gap: 10px;
+      align-items: center;
+      padding: 12px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      min-width: 360px;
+    }
+
     .rate-box {
       display: grid;
       grid-template-columns: auto 92px auto;
       gap: 8px;
       align-items: center;
-      padding: 10px 12px;
-      background: var(--surface);
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      box-shadow: var(--shadow);
       white-space: nowrap;
     }
 
     .rate-box .rate-meta {
-      grid-column: 1 / -1;
       color: var(--muted);
       font-size: 12px;
       font-weight: 800;
@@ -95,6 +101,18 @@
       border-radius: 6px;
       text-align: right;
     }
+
+    .rate-updated {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding-top: 8px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .rate-updated strong { color: var(--text); }
 
     .import-panel,
     .profit-panel,
@@ -554,7 +572,7 @@
       .profit-panel,
       .card-main,
       .side { grid-template-columns: 1fr; }
-      .rate-box { justify-content: start; box-shadow: none; }
+      .rate-panel { min-width: 0; box-shadow: none; }
       .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .thumb { width: 96px; }
@@ -569,21 +587,23 @@
         <h1>TikTok 女装 SKU 风险筛选器</h1>
         <p>批量解析 CSV，识别重量、价格、尺寸、信息缺失和利润风险，辅助快速决定优先测试 / 暂缓上架。</p>
       </div>
-      <label class="rate-box">
-        <span>1 USD =</span>
-        <input id="exchangeRate" type="number" min="0" step="0.01" value="4.7">
-        <span>MYR</span>
-        <span class="rate-meta" id="usdRateMode">自动汇率</span>
-      </label>
-      <label class="rate-box">
-        <span>1 RMB =</span>
-        <input id="rmbRate" type="number" min="0" step="0.01" value="0.65">
-        <span>MYR</span>
-        <span class="rate-meta" id="rmbRateMode">自动汇率</span>
-      </label>
-      <div class="rate-box">
-        <span>汇率更新时间</span>
-        <strong id="rateUpdatedAt">-</strong>
+      <div class="rate-panel" aria-label="汇率设置">
+        <label class="rate-box">
+          <span>1 USD =</span>
+          <input id="exchangeRate" type="number" min="0" step="0.01" value="4.7">
+          <span>MYR</span>
+          <span class="rate-meta" id="usdRateMode">自动汇率</span>
+        </label>
+        <label class="rate-box">
+          <span>1 RMB =</span>
+          <input id="rmbRate" type="number" min="0" step="0.01" value="0.65">
+          <span>MYR</span>
+          <span class="rate-meta" id="rmbRateMode">自动汇率</span>
+        </label>
+        <div class="rate-updated">
+          <span>最后更新时间</span>
+          <strong id="rateUpdatedAt">-</strong>
+        </div>
       </div>
     </section>
 
