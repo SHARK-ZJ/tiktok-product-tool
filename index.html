@@ -858,8 +858,8 @@
 
     function getProfitConfig() {
       return {
-        exchangeRate: toNumber(els.rate.value) || 4.7,
-        rmbRate: toNumber(els.rmbRate.value) || 0.65,
+        exchangeRate: currentUsdToMyrRate(),
+        rmbRate: currentRmbToMyrRate(),
         commissionRate: (toNumber(els.commissionRate.value) ?? 6) / 100,
         paymentRate: (toNumber(els.paymentRate.value) ?? 2) / 100,
         otherCost: toNumber(els.otherCost.value) ?? 0,
@@ -867,6 +867,14 @@
         costField: els.costField.value,
         shippingRules: parseShippingRules(els.shippingRules.value)
       };
+    }
+
+    function currentUsdToMyrRate() {
+      return toNumber(els.rate.value) ?? DEFAULT_RATES.usdToMyr;
+    }
+
+    function currentRmbToMyrRate() {
+      return toNumber(els.rmbRate.value) ?? DEFAULT_RATES.rmbToMyr;
     }
 
     function formatDateTime(timestamp) {
@@ -1787,7 +1795,7 @@
         els.list.innerHTML = '<div class="empty">当前筛选条件下没有产品。</div>';
         return;
       }
-      const rate = toNumber(els.rate.value) || 4.7;
+      const rate = currentUsdToMyrRate();
       els.list.innerHTML = products.map((product) => renderProductCard(product, rate)).join('');
     }
 
