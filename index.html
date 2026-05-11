@@ -876,6 +876,11 @@
       };
     }
 
+    function normalizeWeight(row) {
+      const field = fieldNameFor(row, 'weight');
+      return normalizeWeightKg(field ? row[field] : '', field);
+    }
+
     function normalizeWeightKg(rawValue, fieldName) {
       const num = toNumber(rawValue);
       if (num === null) return { value: null, suspectedGram: false };
@@ -1093,10 +1098,7 @@
       const prices = product.rows.map((row) => value(row, 'price'));
       const localPrices = product.rows.map((row) => value(row, 'localPrice'));
       const stocks = product.rows.map((row) => toNumber(value(row, 'stock')) || 0);
-      const weightInfos = product.rows.map((row) => {
-        const field = fieldNameFor(row, 'weight');
-        return normalizeWeightKg(field ? row[field] : '', field);
-      });
+      const weightInfos = product.rows.map((row) => normalizeWeight(row));
       const weightValues = weightInfos.map((info) => info.value);
       const suspectedGramWeight = weightInfos.some((info) => info.suspectedGram);
       const lengthValues = product.rows.map((row) => numericField(row, 'length').value);
@@ -1147,7 +1149,7 @@
       const profitLow = profitStatus === '利润偏低';
       const profitLoss = profitStatus === '可能亏损';
       const profitUnknown = profitStatus === '利润无法计算';
-      const freightEatsProfit = shippingMyr !== null && estimatedProfit !== null && shippingMyr > estimatedProfit;
+      const freightEatsProfit = shippingMyr !== null && shippingMyr > 0 && estimatedProfit !== null && estimatedProfit > 0 && shippingMyr > estimatedProfit;
       const shippingProfitRisk = weight !== null && weight > 0.5 && minPrice !== null && minPrice < 35;
       const tags = [];
       const mainImageMissing = !hasMainImage;
@@ -1242,7 +1244,7 @@
         highPrice,
         stockTotal,
         weight,
-        weightDisplay: numericRange(product.rows.map((row) => value(row, 'weight')), 'kg'),
+        weightDisplay: numericRange(weightValues, 'kg'),
         sizeDisplay: `${numericRange(product.rows.map((row) => value(row, 'length')), 'cm')} x ${numericRange(product.rows.map((row) => value(row, 'width')), 'cm')} x ${numericRange(product.rows.map((row) => value(row, 'height')), 'cm')}`,
         tags: [...new Set(tags)],
         score,
