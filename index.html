@@ -1506,7 +1506,8 @@
       const costRmb = rowCostRmbValues.length ? Math.min(...rowCostRmbValues) : matchedCostRmb;
       const sourceShippingRmbValues = product.rows.map((row) => cleanPrice(value(row, 'sourceShippingRmb'))).filter((n) => n !== null);
       const sourceShippingRmb = sourceShippingRmbValues.length ? Math.min(...sourceShippingRmbValues) : matchedCost ? matchedCost.sourceShippingRmb : null;
-      const costMyrFromRmb = costRmb !== null ? costRmb * config.rmbRate : null;
+      const totalCostRmb = costRmb !== null ? costRmb + (sourceShippingRmb || 0) : null;
+      const costMyrFromRmb = totalCostRmb !== null ? totalCostRmb * config.rmbRate : null;
       const costValues = config.costField ? product.rows.map((row) => cleanPrice(row[config.costField])).filter((n) => n !== null) : [];
       const costPrice = costMyrFromRmb !== null ? costMyrFromRmb : costValues.length ? Math.min(...costValues) : null;
       const costSource = costMyrFromRmb !== null ? '1688 RMB' : costPrice !== null ? 'MYR字段' : '';
@@ -1610,6 +1611,7 @@
         salePriceRange,
         costPrice,
         costRmb,
+        totalCostRmb,
         costMyr: costPrice,
         costSource,
         matchedCost,
@@ -1664,7 +1666,9 @@
 
     function handlingAdvice(product) {
       if (product.profitLoss) return '预估利润为负，不建议上架，除非用于引流或重新定价。';
-      if (product.profitUnknown) return '售价或采购价缺失，利润无法计算，先补齐价格再判断。';
+      if (product.profitUnknown && product.salePrice !== null && product.costPrice === null) return '采购价缺失，利润无法计算。';
+      if (product.profitUnknown && product.salePrice === null) return '售价缺失，利润无法计算。';
+      if (product.profitUnknown) return '采购价缺失，利润无法计算。';
       if (product.missingInfo) return '主图或来源链接缺失，暂缓上架，先补齐素材。';
       if (product.dimensionAnomaly) return '尺寸为 0 或异常值，需补齐真实尺寸后再上架。';
       if (product.weightAnomaly) return '重量为 0 或异常值，需补齐真实重量后再判断运费。';
@@ -1691,7 +1695,8 @@
       }
       items.push(product.shippingUsd && product.shippingUsd > 0 ? `运费会增加 ${formatNum(product.shippingUsd)} USD。` : '暂无额外超重运费。');
       if (product.shippingProfitRisk) items.push('利润可能被额外运费吃掉。');
-      if (product.profitUnknown) items.push('售价为空或采购价为空，利润无法计算。');
+      if (product.profitUnknown && product.salePrice !== null && product.costPrice === null) items.push('采购价缺失，利润无法计算。');
+      if (product.profitUnknown && product.salePrice === null) items.push('售价缺失，利润无法计算。');
       if (product.profitLoss) items.push('预估利润为负，不建议上架，除非用于引流或重新定价。');
       if (product.profitLow) items.push('利润率低于目标最低利润率，需重新核价。');
       if (product.freightEatsProfit) items.push('额外运费 MYR 大于预估利润，运费吃利润。');
@@ -1845,7 +1850,7 @@
                 ${fact('预估利润', product.estimatedProfit === null ? '-' : `${formatNum(product.estimatedProfit)} MYR`)}
                 ${fact('预估利润率', product.profitMargin === null ? '-' : `${formatNum(product.profitMargin * 100)}%`)}
                 ${fact('1688采购价', product.costRmb === null ? '-' : `${formatNum(product.costRmb)} RMB`)}
-                ${fact('折算采购价', product.costMyr === null ? '-' : `${formatNum(product.costMyr)} MYR`)}
+                ${fact('折算采购成本', product.costMyr === null ? '-' : `${formatNum(product.costMyr)} MYR`)}
                 ${fact('1688国内运费', product.sourceShippingRmb === null ? '-' : `${formatNum(product.sourceShippingRmb)} RMB`)}
                 ${fact('额外运费 MYR', product.shippingMyr === null ? '-' : `${formatNum(product.shippingMyr)} MYR`)}
                 ${fact('分类id', product.categoryId || '-')}
@@ -1875,7 +1880,7 @@
               <div class="shipping">
                 <div>利润状态：<strong>${escapeHtml(product.profitStatus)}</strong></div>
                 <div>1688采购价：<strong>${product.costRmb === null ? '-' : `${formatNum(product.costRmb)} RMB`}</strong></div>
-                <div>折算采购价：<strong>${product.costMyr === null ? '-' : `${formatNum(product.costMyr)} MYR`}</strong></div>
+                <div>折算采购成本：<strong>${product.costMyr === null ? '-' : `${formatNum(product.costMyr)} MYR`}</strong></div>
                 <div>预估利润：<strong>${product.estimatedProfit === null ? '-' : `${formatNum(product.estimatedProfit)} MYR`}</strong></div>
                 <div>预估利润率：<strong>${product.profitMargin === null ? '-' : `${formatNum(product.profitMargin * 100)}%`}</strong></div>
                 <div>额外运费 USD：<strong>${product.shippingUsd === null ? '-' : `${formatNum(product.shippingUsd)} USD`}</strong></div>
@@ -1971,7 +1976,7 @@
     }
 
     function exportPriorityProducts() {
-      const headers = ['产品id', '产品标题', 'SKU 数', '售价区间', '1688采购价 RMB', '采购价 MYR', '重量', '额外运费 MYR', '预估利润', '预估利润率', '推荐等级', '来源Url', '主图地址'];
+      const headers = ['产品id', '产品标题', 'SKU 数', '售价区间', '1688采购价 RMB', '采购成本 MYR', '重量', '额外运费 MYR', '预估利润', '预估利润率', '推荐等级', '来源Url', '主图地址'];
       const rows = state.products
         .filter((product) => product.level === '优先测试')
         .map((product) => ({
@@ -1980,7 +1985,7 @@
           'SKU 数': product.skuCount,
           '售价区间': product.salePriceRange || '',
           '1688采购价 RMB': product.costRmb === null ? '' : formatNum(product.costRmb),
-          '采购价 MYR': product.costMyr === null ? '' : formatNum(product.costMyr),
+          '采购成本 MYR': product.costMyr === null ? '' : formatNum(product.costMyr),
           '重量': product.weightDisplay,
           '额外运费 MYR': product.shippingMyr === null ? '' : formatNum(product.shippingMyr),
           '预估利润': product.estimatedProfit === null ? '' : formatNum(product.estimatedProfit),
@@ -1993,7 +1998,7 @@
     }
 
     function exportTestableProducts() {
-      const headers = ['产品id', '产品标题', 'SKU 数', '售价区间', '1688采购价 RMB', '采购价 MYR', '重量', '额外运费 MYR', '预估利润', '预估利润率', '推荐等级', '处理建议', '来源Url', '主图地址'];
+      const headers = ['产品id', '产品标题', 'SKU 数', '售价区间', '1688采购价 RMB', '采购成本 MYR', '重量', '额外运费 MYR', '预估利润', '预估利润率', '推荐等级', '处理建议', '来源Url', '主图地址'];
       const rows = state.products
         .filter((product) => product.level === '优先测试' || product.level === '可测试但需检查')
         .map((product) => ({
@@ -2002,7 +2007,7 @@
           'SKU 数': product.skuCount,
           '售价区间': product.salePriceRange || '',
           '1688采购价 RMB': product.costRmb === null ? '' : formatNum(product.costRmb),
-          '采购价 MYR': product.costMyr === null ? '' : formatNum(product.costMyr),
+          '采购成本 MYR': product.costMyr === null ? '' : formatNum(product.costMyr),
           '重量': product.weightDisplay,
           '额外运费 MYR': product.shippingMyr === null ? '' : formatNum(product.shippingMyr),
           '预估利润': product.estimatedProfit === null ? '' : formatNum(product.estimatedProfit),
@@ -2016,7 +2021,7 @@
     }
 
     function exportRiskyProducts() {
-      const headers = ['产品id', '产品标题', '问题标签', '重量', '尺寸', '售价', '1688采购价 RMB', '采购价 MYR', '额外运费 MYR', '预估利润', '预估利润率', '处理建议', '来源Url'];
+      const headers = ['产品id', '产品标题', '问题标签', '重量', '尺寸', '售价', '1688采购价 RMB', '采购成本 MYR', '额外运费 MYR', '预估利润', '预估利润率', '处理建议', '来源Url'];
       const rows = state.products
         .filter((product) => product.hardRisk)
         .map((product) => ({
@@ -2027,7 +2032,7 @@
           '尺寸': product.sizeDisplay,
           '售价': product.salePrice === null ? '' : formatNum(product.salePrice),
           '1688采购价 RMB': product.costRmb === null ? '' : formatNum(product.costRmb),
-          '采购价 MYR': product.costMyr === null ? '' : formatNum(product.costMyr),
+          '采购成本 MYR': product.costMyr === null ? '' : formatNum(product.costMyr),
           '额外运费 MYR': product.shippingMyr === null ? '' : formatNum(product.shippingMyr),
           '预估利润': product.estimatedProfit === null ? '' : formatNum(product.estimatedProfit),
           '预估利润率': product.profitMargin === null ? '' : `${formatNum(product.profitMargin * 100)}%`,
