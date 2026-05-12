@@ -153,6 +153,7 @@
     .import-panel,
     .profit-panel,
     .toolbar,
+    .decision-board,
     .summary {
       background: rgba(255, 255, 255, 0.96);
       border: 1px solid var(--line);
@@ -300,6 +301,65 @@
       font-size: 25px;
       line-height: 1.1;
       letter-spacing: 0;
+    }
+
+    .decision-board {
+      padding: 14px;
+      margin-bottom: 16px;
+    }
+
+    .decision-board h2 {
+      margin: 0 0 12px;
+      font-size: 16px;
+      line-height: 1.3;
+    }
+
+    .decision-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 10px;
+    }
+
+    .decision-card {
+      min-height: 82px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: linear-gradient(180deg, #ffffff, #f8fafc);
+    }
+
+    .decision-card span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      margin-bottom: 6px;
+    }
+
+    .decision-card strong {
+      display: block;
+      font-size: 24px;
+      line-height: 1;
+    }
+
+    .decision-card.priority { border-color: rgba(4, 120, 87, 0.35); background: var(--green-bg); }
+    .decision-card.review,
+    .decision-card.cost { border-color: rgba(180, 83, 9, 0.35); background: var(--yellow-bg); }
+    .decision-card.fix,
+    .decision-card.weight,
+    .decision-card.price { border-color: rgba(29, 78, 216, 0.22); background: var(--blue-bg); }
+    .decision-card.stop { border-color: rgba(185, 28, 28, 0.28); background: var(--red-bg); }
+
+    .next-action {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #eef6f5;
+      color: #0f766e;
+      font-size: 13px;
+      font-weight: 900;
     }
 
     .toolbar {
@@ -626,12 +686,14 @@
       .topbar,
       .import-panel,
       .profit-panel,
+      .decision-board,
       .card-main,
       .side { grid-template-columns: 1fr; }
       .rate-panel { width: 100%; min-width: 0; box-shadow: none; }
       .rate-box { grid-template-columns: 64px 104px 40px; }
       .rate-box .rate-meta { grid-column: 1 / -1; justify-self: start; }
       .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .decision-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .thumb { width: 96px; }
       .count-note { width: 100%; margin-left: 0; }
@@ -725,6 +787,8 @@
     </section>
 
     <section class="summary" id="summary" aria-label="汇总看板"></section>
+
+    <section class="decision-board" id="decisionBoard" aria-label="选品决策台"></section>
 
     <section class="toolbar">
       <div class="control">
@@ -842,6 +906,7 @@
       clear: document.getElementById('clearBtn'),
       status: document.getElementById('status'),
       summary: document.getElementById('summary'),
+      decisionBoard: document.getElementById('decisionBoard'),
       list: document.getElementById('productList'),
       rate: document.getElementById('exchangeRate'),
       rmbRate: document.getElementById('rmbRate'),
@@ -1519,7 +1584,11 @@
         product.currency = product.currency || value(row, 'currency');
         product.publishTime = product.publishTime || value(row, 'publishTime');
       });
-      return [...groups.values()].map((product) => enrichProduct(product));
+      return [...groups.values()].map((product) => {
+        const enriched = enrichProduct(product);
+        enriched.nextAction = decideNextAction(enriched);
+        return enriched;
+      });
     }
 
     function enrichProduct(product) {
@@ -1745,6 +1814,51 @@
       return '可测试但需补充核价、素材和利润复核。';
     }
 
+    // Decision pipeline: turn SKU, cost, logistics, and content checks into operator actions.
+    function decideNextAction(product) {
+      if (product.profitLoss || (product.estimatedProfit !== null && product.estimatedProfit < 0)) return '暂缓上架';
+      if (product.sourceUrl && product.costPrice === null) return '待抓1688成本';
+      if (product.mainImageMissing || product.priceMissing || product.sourceMissing) return '补资料';
+      if (product.weightAnomaly || product.dimensionAnomaly || product.suspectedWeightError) return '复核重量尺寸';
+      if (product.profitLow || product.freightEatsProfit) return '调价/砍成本';
+      if (product.level === '优先测试') return '优先测试';
+      if (product.level === '可测试但需检查') return '可测复核';
+      return '暂缓上架';
+    }
+
+    function buildDecisionPipeline(products) {
+      const actions = ['优先测试', '可测复核', '待抓1688成本', '补资料', '复核重量尺寸', '调价/砍成本', '暂缓上架'];
+      return actions.map((action) => ({
+        action,
+        count: products.filter((product) => product.nextAction === action).length
+      }));
+    }
+
+    function decisionClass(action) {
+      if (action === '优先测试') return 'priority';
+      if (action === '可测复核') return 'review';
+      if (action === '待抓1688成本') return 'cost';
+      if (action === '补资料') return 'fix';
+      if (action === '复核重量尺寸') return 'weight';
+      if (action === '调价/砍成本') return 'price';
+      return 'stop';
+    }
+
+    function renderDecisionBoard(products) {
+      const pipeline = buildDecisionPipeline(products);
+      els.decisionBoard.innerHTML = `
+        <h2>选品决策台</h2>
+        <div class="decision-grid">
+          ${pipeline.map((item) => `
+            <div class="decision-card ${decisionClass(item.action)}">
+              <span>${escapeHtml(item.action)}</span>
+              <strong>${formatNum(item.count, 0)}</strong>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
     function checklist(product) {
       const items = [];
       if (product.weightAnomaly) {
@@ -1907,11 +2021,15 @@
                 处理建议：<strong>${escapeHtml(advice)}</strong>
               </div>
               <div class="title-quality">
+                下一步动作：<span class="next-action">${escapeHtml(product.nextAction || '-')}</span>
+              </div>
+              <div class="title-quality">
                 标题质量：<strong>${escapeHtml(product.titleQuality.summary)}</strong>
                 ${product.titleQuality.issues.length ? `；问题：${escapeHtml(product.titleQuality.issues.join('、'))}` : ''}
               </div>
               <div class="facts">
                 ${fact('推荐等级', product.level)}
+                ${fact('下一步动作', `<span class="next-action">${escapeHtml(product.nextAction || '-')}</span>`, true)}
                 ${fact('利润状态', product.profitStatus)}
                 ${fact('预估利润', product.estimatedProfit === null ? '-' : `${formatNum(product.estimatedProfit)} MYR`)}
                 ${fact('预估利润率', product.profitMargin === null ? '-' : `${formatNum(product.profitMargin * 100)}%`)}
@@ -2042,7 +2160,7 @@
     }
 
     function exportPriorityProducts() {
-      const headers = ['产品id', '产品标题', 'SKU 数', '售价区间', '1688采购价 RMB', '采购成本 MYR', '重量', '额外运费 MYR', '预估利润', '预估利润率', '推荐等级', '来源Url', '主图地址'];
+      const headers = ['产品id', '产品标题', 'SKU 数', '售价区间', '1688采购价 RMB', '采购成本 MYR', '重量', '额外运费 MYR', '预估利润', '预估利润率', '推荐等级', '下一步动作', '来源Url', '主图地址'];
       const rows = state.products
         .filter((product) => product.level === '优先测试')
         .map((product) => ({
@@ -2057,6 +2175,7 @@
           '预估利润': product.estimatedProfit === null ? '' : formatNum(product.estimatedProfit),
           '预估利润率': product.profitMargin === null ? '' : `${formatNum(product.profitMargin * 100)}%`,
           '推荐等级': product.level,
+          '下一步动作': product.nextAction || '',
           '来源Url': product.sourceUrl || '',
           '主图地址': product.mainImage || ''
         }));
@@ -2064,7 +2183,7 @@
     }
 
     function exportTestableProducts() {
-      const headers = ['产品id', '产品标题', 'SKU 数', '售价区间', '1688采购价 RMB', '采购成本 MYR', '重量', '额外运费 MYR', '预估利润', '预估利润率', '推荐等级', '处理建议', '来源Url', '主图地址'];
+      const headers = ['产品id', '产品标题', 'SKU 数', '售价区间', '1688采购价 RMB', '采购成本 MYR', '重量', '额外运费 MYR', '预估利润', '预估利润率', '推荐等级', '下一步动作', '处理建议', '来源Url', '主图地址'];
       const rows = state.products
         .filter((product) => product.level === '优先测试' || product.level === '可测试但需检查')
         .map((product) => ({
@@ -2079,6 +2198,7 @@
           '预估利润': product.estimatedProfit === null ? '' : formatNum(product.estimatedProfit),
           '预估利润率': product.profitMargin === null ? '' : `${formatNum(product.profitMargin * 100)}%`,
           '推荐等级': product.level,
+          '下一步动作': product.nextAction || '',
           '处理建议': handlingAdvice(product),
           '来源Url': product.sourceUrl || '',
           '主图地址': product.mainImage || ''
@@ -2087,7 +2207,7 @@
     }
 
     function exportRiskyProducts() {
-      const headers = ['产品id', '产品标题', '问题标签', '重量', '尺寸', '售价', '1688采购价 RMB', '采购成本 MYR', '额外运费 MYR', '预估利润', '预估利润率', '处理建议', '来源Url'];
+      const headers = ['产品id', '产品标题', '问题标签', '重量', '尺寸', '售价', '1688采购价 RMB', '采购成本 MYR', '额外运费 MYR', '预估利润', '预估利润率', '下一步动作', '处理建议', '来源Url'];
       const rows = state.products
         .filter((product) => product.hardRisk)
         .map((product) => ({
@@ -2102,6 +2222,7 @@
           '额外运费 MYR': product.shippingMyr === null ? '' : formatNum(product.shippingMyr),
           '预估利润': product.estimatedProfit === null ? '' : formatNum(product.estimatedProfit),
           '预估利润率': product.profitMargin === null ? '' : `${formatNum(product.profitMargin * 100)}%`,
+          '下一步动作': product.nextAction || '',
           '处理建议': handlingAdvice(product),
           '来源Url': product.sourceUrl || ''
         }));
@@ -2148,6 +2269,7 @@
         populateCostFieldOptions(state.headers);
         state.products = aggregateRows(rows);
         renderSummary(state.products, state.rows);
+        renderDecisionBoard(state.products);
         renderProducts();
         const encodingText = fileResult.encoding ? `，识别编码：${fileResult.encoding}` : '';
         if (!csvText || !looksLikeEncodingIssue(csvText)) {
@@ -2177,6 +2299,7 @@
       state.costMap = new Map();
       populateCostFieldOptions([]);
       renderSummary([], []);
+      renderDecisionBoard([]);
       renderProducts();
       els.status.textContent = '数据仅在浏览器本地处理，不上传服务器。CSV 解析器已内置，断网也可使用。';
       els.status.className = 'status';
@@ -2184,11 +2307,13 @@
 
     function recalculateProducts() {
       if (!state.rows.length) {
+        renderDecisionBoard([]);
         renderProducts();
         return;
       }
       state.products = aggregateRows(state.rows);
       renderSummary(state.products, state.rows);
+      renderDecisionBoard(state.products);
       renderProducts();
     }
 
@@ -2217,6 +2342,7 @@
 
     function init() {
       renderSummary([], []);
+      renderDecisionBoard([]);
       els.parse.addEventListener('click', handleParse);
       els.clear.addEventListener('click', resetAll);
       els.rate.addEventListener('input', () => {
