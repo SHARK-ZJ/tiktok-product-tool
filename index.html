@@ -780,6 +780,7 @@
       <div class="export-actions">
         <button class="btn secondary" id="loadCostTableBtn" type="button">读取1688成本表</button>
         <button class="btn secondary" id="export1688TasksBtn" type="button">导出1688抓价清单 CSV</button>
+        <button class="btn secondary" id="exportActionListBtn" type="button">导出执行清单 CSV</button>
         <button class="btn secondary" id="exportPriorityBtn" type="button">导出优先测试清单 CSV</button>
         <button class="btn secondary" id="exportTestableBtn" type="button">导出可测试清单 CSV</button>
         <button class="btn secondary" id="exportRiskyBtn" type="button">导出问题商品清单 CSV</button>
@@ -809,6 +810,9 @@
         <label class="check-pill"><input id="onlyMissing" type="checkbox">只看信息缺失</label>
         <label class="check-pill"><input id="onlyWeightError" type="checkbox">只看疑似重量填错</label>
         <label class="check-pill"><input id="onlyAbnormal" type="checkbox">只看异常项</label>
+        <label class="check-pill"><input id="onlyFetchCost" type="checkbox">只看抓1688成本</label>
+        <label class="check-pill"><input id="onlyReprice" type="checkbox">只看调价/砍成本</label>
+        <label class="check-pill"><input id="onlyPaused" type="checkbox">只看暂缓上架</label>
       </div>
       <span class="count-note" id="countNote">未导入数据</span>
     </section>
@@ -922,6 +926,7 @@
       loadCostTable: document.getElementById('loadCostTableBtn'),
       shippingRules: document.getElementById('shippingRules'),
       export1688Tasks: document.getElementById('export1688TasksBtn'),
+      exportActionList: document.getElementById('exportActionListBtn'),
       exportPriority: document.getElementById('exportPriorityBtn'),
       exportTestable: document.getElementById('exportTestableBtn'),
       exportRisky: document.getElementById('exportRiskyBtn'),
@@ -931,6 +936,9 @@
       missing: document.getElementById('onlyMissing'),
       weightError: document.getElementById('onlyWeightError'),
       abnormal: document.getElementById('onlyAbnormal'),
+      fetchCost: document.getElementById('onlyFetchCost'),
+      reprice: document.getElementById('onlyReprice'),
+      paused: document.getElementById('onlyPaused'),
       search: document.getElementById('searchBox'),
       count: document.getElementById('countNote')
     };
@@ -1876,6 +1884,32 @@
       return action === '待抓1688成本' ? '抓1688成本' : action || '';
     }
 
+    function suggestedMinSalePrice(product) {
+      const config = getProfitConfig();
+      const targetMargin = config.targetMargin;
+      if (product.costPrice === null || product.platformFee === null || product.paymentFee === null) return null;
+      const denominator = 1 - config.commissionRate - config.paymentRate - targetMargin;
+      if (denominator <= 0) return null;
+      const fixedCost = product.costPrice + (product.shippingMyr || 0) + config.otherCost;
+      return fixedCost / denominator;
+    }
+
+    function productDetailPackage(product) {
+      const skuList = product.rows.map((row) => value(row, 'sku')).filter(Boolean).join(', ');
+      const suggestedPrice = suggestedMinSalePrice(product);
+      return [
+        `产品标题：${product.title || '-'}`,
+        `SKU：${skuList || '-'}`,
+        `来源Url：${product.sourceUrl || '-'}`,
+        `采购价：${product.costRmb === null ? '-' : `${formatNum(product.costRmb)} RMB`} / ${product.costMyr === null ? '-' : `${formatNum(product.costMyr)} MYR`}`,
+        `售价：${product.salePrice === null ? '-' : `${formatNum(product.salePrice)} MYR`}`,
+        `利润率：${product.profitMargin === null ? '-' : `${formatNum(product.profitMargin * 100)}%`}`,
+        `下一步动作：${displayNextAction(product.nextAction) || '-'}`,
+        `处理建议：${handlingAdvice(product)}`,
+        `建议最低售价：${suggestedPrice === null ? '-' : `${formatNum(suggestedPrice)} MYR`}`
+      ].join('\n');
+    }
+
     function buildDecisionPipeline(products) {
       const actions = ['优先测试', '可测复核', '待抓1688成本', '补资料', '复核重量尺寸', '调价/砍成本', '暂缓上架'];
       return actions.map((action) => ({
@@ -1986,6 +2020,9 @@
         if (els.missing.checked && !product.missingInfo) return false;
         if (els.weightError.checked && !product.suspectedWeightError) return false;
         if (els.abnormal.checked && !product.abnormal) return false;
+        if (els.fetchCost.checked && product.nextAction !== '待抓1688成本') return false;
+        if (els.reprice.checked && product.nextAction !== '调价/砍成本') return false;
+        if (els.paused.checked && product.nextAction !== '暂缓上架') return false;
         if (!query) return true;
         const skuText = product.rows.map((row) => value(row, 'sku')).join(' ');
         const searchable = `${product.title} ${product.productId} ${product.categoryId} ${skuText}`.toLowerCase();
@@ -2036,6 +2073,7 @@
       const cardClass = levelClass(product.level);
       const levelName = cardClass.replace('level-', '');
       const advice = handlingAdvice(product);
+      const suggestedPrice = suggestedMinSalePrice(product);
       const alert = product.profitLoss
         ? '<div class="alert">可能亏损：预估利润为负，不建议上架，除非用于引流或重新定价。</div>'
         : product.freightEatsProfit
@@ -2064,6 +2102,7 @@
                 ${copyButton('复制来源链接', product.sourceUrl)}
                 ${copyButton('复制价格', product.localPriceRange !== '-' ? product.localPriceRange : product.priceRange)}
                 ${copyButton('复制重量', product.weight === null ? '' : `${formatNum(product.weight, 3)}kg`)}
+                ${copyButton('复制详情包', productDetailPackage(product))}
               </div>
               <div class="tags">${tags}</div>
               ${alert}
@@ -2083,6 +2122,7 @@
                 ${fact('利润状态', product.profitStatus)}
                 ${fact('预估利润', product.estimatedProfit === null ? '-' : `${formatNum(product.estimatedProfit)} MYR`)}
                 ${fact('预估利润率', product.profitMargin === null ? '-' : `${formatNum(product.profitMargin * 100)}%`)}
+                ${fact('建议最低售价', suggestedPrice === null ? '-' : `${formatNum(suggestedPrice)} MYR`)}
                 ${fact('1688采购价', product.costRmb === null ? '-' : `${formatNum(product.costRmb)} RMB`)}
                 ${fact('折算采购成本', product.costMyr === null ? '-' : `${formatNum(product.costMyr)} MYR`)}
                 ${fact('1688国内运费', product.sourceShippingRmb === null ? '-' : `${formatNum(product.sourceShippingRmb)} RMB`)}
@@ -2119,6 +2159,7 @@
                 <div>1688重量：<strong>${product.sourceWeightKg === null ? '-' : `${formatNum(product.sourceWeightKg, 3)}kg`}</strong></div>
                 <div>预估利润：<strong>${product.estimatedProfit === null ? '-' : `${formatNum(product.estimatedProfit)} MYR`}</strong></div>
                 <div>预估利润率：<strong>${product.profitMargin === null ? '-' : `${formatNum(product.profitMargin * 100)}%`}</strong></div>
+                <div>调价建议：<strong>${suggestedPrice === null ? '-' : `${formatNum(suggestedPrice)} MYR`}</strong></div>
                 <div>额外运费 USD：<strong>${product.shippingUsd === null ? '-' : `${formatNum(product.shippingUsd)} USD`}</strong></div>
                 <div>额外运费 MYR：<strong>${shippingMyr === null ? '-' : `${formatNum(shippingMyr)} MYR`}</strong></div>
                 <div>是否超过 0.5kg：<strong>${product.weight === null ? '-' : product.weight > 0.5 ? '是' : '否'}</strong></div>
@@ -2299,6 +2340,34 @@
       downloadCsv(`1688-fetch-tasks-${todayString()}.csv`, headers, rows);
     }
 
+    function exportActionList() {
+      const actionOrder = ['待抓1688成本', '优先测试', '调价/砍成本', '复核重量尺寸', '暂缓上架'];
+      const headers = ['执行分组', '产品id', '产品标题', 'SKU数', 'TikTok售价', '采购价 RMB', '采购成本 MYR', '重量', '利润率', '建议最低售价 MYR', '当前推荐等级', '下一步动作', '处理建议', '来源Url', 'offerId'];
+      const rows = actionOrder.flatMap((action) => state.products
+        .filter((product) => product.nextAction === action)
+        .map((product) => {
+          const suggestedPrice = suggestedMinSalePrice(product);
+          return {
+            '执行分组': displayNextAction(action),
+            '产品id': product.productId || '',
+            '产品标题': product.title || '',
+            'SKU数': product.skuCount,
+            'TikTok售价': product.salePrice === null ? '' : formatNum(product.salePrice),
+            '采购价 RMB': product.costRmb === null ? '' : formatNum(product.costRmb),
+            '采购成本 MYR': product.costMyr === null ? '' : formatNum(product.costMyr),
+            '重量': product.weightDisplay,
+            '利润率': product.profitMargin === null ? '' : `${formatNum(product.profitMargin * 100)}%`,
+            '建议最低售价 MYR': suggestedPrice === null ? '' : formatNum(suggestedPrice),
+            '当前推荐等级': product.level || '',
+            '下一步动作': displayNextAction(product.nextAction),
+            '处理建议': handlingAdvice(product),
+            '来源Url': product.sourceUrl || '',
+            'offerId': extractOfferId(product.sourceUrl)
+          };
+        }));
+      downloadCsv(`action-list-${todayString()}.csv`, headers, rows);
+    }
+
     async function handleParse() {
       els.status.textContent = '正在读取 CSV / XLSX...';
       els.status.className = 'status';
@@ -2348,6 +2417,9 @@
       els.missing.checked = false;
       els.weightError.checked = false;
       els.abnormal.checked = false;
+      els.fetchCost.checked = false;
+      els.reprice.checked = false;
+      els.paused.checked = false;
       state.rows = [];
       state.products = [];
       state.headers = [];
@@ -2419,6 +2491,7 @@
       els.shippingRules.addEventListener('input', recalculateProducts);
       els.loadCostTable.addEventListener('click', handleCostTableParse);
       els.export1688Tasks.addEventListener('click', export1688FetchTasks);
+      els.exportActionList.addEventListener('click', exportActionList);
       els.exportPriority.addEventListener('click', exportPriorityProducts);
       els.exportTestable.addEventListener('click', exportTestableProducts);
       els.exportRisky.addEventListener('click', exportRiskyProducts);
@@ -2428,6 +2501,9 @@
       els.missing.addEventListener('change', renderProducts);
       els.weightError.addEventListener('change', renderProducts);
       els.abnormal.addEventListener('change', renderProducts);
+      els.fetchCost.addEventListener('change', renderProducts);
+      els.reprice.addEventListener('change', renderProducts);
+      els.paused.addEventListener('change', renderProducts);
       els.search.addEventListener('input', renderProducts);
       els.list.addEventListener('click', (event) => {
         const button = event.target.closest('[data-copy]');
