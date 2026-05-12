@@ -2102,7 +2102,7 @@
                 ${copyButton('复制来源链接', product.sourceUrl)}
                 ${copyButton('复制价格', product.localPriceRange !== '-' ? product.localPriceRange : product.priceRange)}
                 ${copyButton('复制重量', product.weight === null ? '' : `${formatNum(product.weight, 3)}kg`)}
-                ${copyButton('复制详情包', productDetailPackage(product))}
+                ${copyButton('商品详情复制包', productDetailPackage(product))}
               </div>
               <div class="tags">${tags}</div>
               ${alert}
