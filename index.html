@@ -971,8 +971,9 @@
       warehouse: ['仓库名称'],
       cod: ['货到付款', 'cod'],
       sourceUrl: ['来源Url', '来源URL', '来源url', 'source_url', 'Source URL', '1688 URL', 'Product URL', '1688链接'],
+      offerId: ['offerId', 'Offer ID', 'offer ID', 'offer_id'],
       sourceWeight: ['1688重量', '1688重量(g)', 'source_weight', 'source_weight_g'],
-      sourceShippingRmb: ['1688运费', '国内运费', 'source_shipping_rmb'],
+      sourceShippingRmb: ['1688运费', '1688国内运费', '国内运费', 'source_shipping_rmb'],
       shopName: ['店铺名'],
       productId: ['产品id', '产品ID', 'Product ID', 'Product Id', 'product_id', '商品 ID', '商品ID'],
       currency: ['店铺币种'],
@@ -1157,6 +1158,20 @@
     function costMatchKey(url) {
       const offerId = extractOfferId(url);
       return offerId || String(url || '').trim().split(/[?#]/)[0].replace(/\/$/, '');
+    }
+
+    function costMatchKeys(rowOrUrl) {
+      if (typeof rowOrUrl === 'string') {
+        const key = costMatchKey(rowOrUrl);
+        return key ? [key] : [];
+      }
+      const keys = [];
+      const sourceUrl = value(rowOrUrl, 'sourceUrl');
+      const offerId = value(rowOrUrl, 'offerId') || extractOfferId(sourceUrl);
+      if (offerId) keys.push(offerId);
+      const urlKey = costMatchKey(sourceUrl);
+      if (urlKey) keys.push(urlKey);
+      return [...new Set(keys)];
     }
 
     function numericField(row, key) {
@@ -1462,25 +1477,55 @@
       const map = new Map();
       rows.forEach((row) => {
         const sourceUrl = value(row, 'sourceUrl');
-        const key = costMatchKey(sourceUrl);
-        if (!key) return;
+        const keys = costMatchKeys(row);
+        if (!keys.length) return;
         const costRmb = cleanPrice(value(row, 'costRmb'));
         const sourceWeightInfo = normalizeSourceWeightKg(row);
         const sourceShippingRmb = cleanPrice(value(row, 'sourceShippingRmb'));
-        map.set(key, {
+        const item = {
           sourceUrl,
+          offerId: value(row, 'offerId') || extractOfferId(sourceUrl),
           costRmb,
           sourceWeightKg: sourceWeightInfo.value,
           sourceShippingRmb,
           note: row['备注'] || row['note'] || row['Note'] || ''
-        });
+        };
+        keys.forEach((key) => map.set(key, item));
       });
       return map;
     }
 
     function findMatchedCost(sourceUrl) {
-      const key = costMatchKey(sourceUrl);
-      return key ? state.costMap.get(key) || null : null;
+      const keys = costMatchKeys(sourceUrl);
+      for (const key of keys) {
+        const matched = state.costMap.get(key);
+        if (matched) return matched;
+      }
+      return null;
+    }
+
+    function costTableStats(rows, products) {
+      const costKeys = new Set();
+      let missingPriceRows = 0;
+      let missingWeightRows = 0;
+
+      rows.forEach((row) => {
+        const keys = costMatchKeys(row);
+        if (cleanPrice(value(row, 'costRmb')) === null) missingPriceRows += 1;
+        if (normalizeSourceWeightKg(row).value === null) missingWeightRows += 1;
+        keys.forEach((key) => costKeys.add(key));
+      });
+
+      const productsWithSource = products.filter((product) => costMatchKey(product.sourceUrl));
+      const matchedProducts = productsWithSource.filter((product) => costKeys.has(costMatchKey(product.sourceUrl))).length;
+
+      return {
+        totalRows: rows.length,
+        matchedProducts,
+        unmatchedProducts: Math.max(0, productsWithSource.length - matchedProducts),
+        missingPriceRows,
+        missingWeightRows
+      };
     }
 
     async function handleCostTableParse() {
@@ -1496,7 +1541,8 @@
         state.costRows = rows;
         state.costMap = buildCostMap(rows);
         recalculateProducts();
-        els.status.textContent = `1688 成本表已读取：${state.costMap.size} 条可匹配成本${parsed.encoding ? `，识别编码：${parsed.encoding}` : ''}。`;
+        const stats = costTableStats(rows, state.products);
+        els.status.textContent = `1688 成本表已读取：总行数 ${stats.totalRows}，成功匹配商品数 ${stats.matchedProducts}，未匹配商品数 ${stats.unmatchedProducts}，缺价格行数 ${stats.missingPriceRows}，缺重量行数 ${stats.missingWeightRows}${parsed.encoding ? `，识别编码：${parsed.encoding}` : ''}。`;
         els.status.className = 'status ok';
       } catch (error) {
         els.status.textContent = error.message || '1688 成本表解析失败，请另存为 CSV UTF-8 后上传。';
@@ -1826,6 +1872,10 @@
       return '暂缓上架';
     }
 
+    function displayNextAction(action) {
+      return action === '待抓1688成本' ? '抓1688成本' : action || '';
+    }
+
     function buildDecisionPipeline(products) {
       const actions = ['优先测试', '可测复核', '待抓1688成本', '补资料', '复核重量尺寸', '调价/砍成本', '暂缓上架'];
       return actions.map((action) => ({
@@ -2021,7 +2071,7 @@
                 处理建议：<strong>${escapeHtml(advice)}</strong>
               </div>
               <div class="title-quality">
-                下一步动作：<span class="next-action">${escapeHtml(product.nextAction || '-')}</span>
+                下一步动作：<span class="next-action">${escapeHtml(displayNextAction(product.nextAction) || '-')}</span>
               </div>
               <div class="title-quality">
                 标题质量：<strong>${escapeHtml(product.titleQuality.summary)}</strong>
@@ -2029,13 +2079,14 @@
               </div>
               <div class="facts">
                 ${fact('推荐等级', product.level)}
-                ${fact('下一步动作', `<span class="next-action">${escapeHtml(product.nextAction || '-')}</span>`, true)}
+                ${fact('下一步动作', `<span class="next-action">${escapeHtml(displayNextAction(product.nextAction) || '-')}</span>`, true)}
                 ${fact('利润状态', product.profitStatus)}
                 ${fact('预估利润', product.estimatedProfit === null ? '-' : `${formatNum(product.estimatedProfit)} MYR`)}
                 ${fact('预估利润率', product.profitMargin === null ? '-' : `${formatNum(product.profitMargin * 100)}%`)}
                 ${fact('1688采购价', product.costRmb === null ? '-' : `${formatNum(product.costRmb)} RMB`)}
                 ${fact('折算采购成本', product.costMyr === null ? '-' : `${formatNum(product.costMyr)} MYR`)}
                 ${fact('1688国内运费', product.sourceShippingRmb === null ? '-' : `${formatNum(product.sourceShippingRmb)} RMB`)}
+                ${fact('1688重量', product.sourceWeightKg === null ? '-' : `${formatNum(product.sourceWeightKg, 3)}kg`)}
                 ${fact('额外运费 MYR', product.shippingMyr === null ? '-' : `${formatNum(product.shippingMyr)} MYR`)}
                 ${fact('分类id', product.categoryId || '-')}
                 ${fact('产品id', product.productId || '-')}
@@ -2065,6 +2116,7 @@
                 <div>利润状态：<strong>${escapeHtml(product.profitStatus)}</strong></div>
                 <div>1688采购价：<strong>${product.costRmb === null ? '-' : `${formatNum(product.costRmb)} RMB`}</strong></div>
                 <div>折算采购成本：<strong>${product.costMyr === null ? '-' : `${formatNum(product.costMyr)} MYR`}</strong></div>
+                <div>1688重量：<strong>${product.sourceWeightKg === null ? '-' : `${formatNum(product.sourceWeightKg, 3)}kg`}</strong></div>
                 <div>预估利润：<strong>${product.estimatedProfit === null ? '-' : `${formatNum(product.estimatedProfit)} MYR`}</strong></div>
                 <div>预估利润率：<strong>${product.profitMargin === null ? '-' : `${formatNum(product.profitMargin * 100)}%`}</strong></div>
                 <div>额外运费 USD：<strong>${product.shippingUsd === null ? '-' : `${formatNum(product.shippingUsd)} USD`}</strong></div>
@@ -2175,7 +2227,7 @@
           '预估利润': product.estimatedProfit === null ? '' : formatNum(product.estimatedProfit),
           '预估利润率': product.profitMargin === null ? '' : `${formatNum(product.profitMargin * 100)}%`,
           '推荐等级': product.level,
-          '下一步动作': product.nextAction || '',
+          '下一步动作': displayNextAction(product.nextAction),
           '来源Url': product.sourceUrl || '',
           '主图地址': product.mainImage || ''
         }));
@@ -2198,7 +2250,7 @@
           '预估利润': product.estimatedProfit === null ? '' : formatNum(product.estimatedProfit),
           '预估利润率': product.profitMargin === null ? '' : `${formatNum(product.profitMargin * 100)}%`,
           '推荐等级': product.level,
-          '下一步动作': product.nextAction || '',
+          '下一步动作': displayNextAction(product.nextAction),
           '处理建议': handlingAdvice(product),
           '来源Url': product.sourceUrl || '',
           '主图地址': product.mainImage || ''
@@ -2222,7 +2274,7 @@
           '额外运费 MYR': product.shippingMyr === null ? '' : formatNum(product.shippingMyr),
           '预估利润': product.estimatedProfit === null ? '' : formatNum(product.estimatedProfit),
           '预估利润率': product.profitMargin === null ? '' : `${formatNum(product.profitMargin * 100)}%`,
-          '下一步动作': product.nextAction || '',
+          '下一步动作': displayNextAction(product.nextAction),
           '处理建议': handlingAdvice(product),
           '来源Url': product.sourceUrl || ''
         }));
@@ -2230,7 +2282,7 @@
     }
 
     function export1688FetchTasks() {
-      const headers = ['产品id', '产品标题', 'SKU数', 'TikTok售价', '来源Url'];
+      const headers = ['产品id', '产品标题', 'SKU数', 'TikTok售价', '来源Url', 'offerId', '当前重量', '当前推荐等级', '当前下一步动作'];
       const rows = state.products
         .filter((product) => product.sourceUrl && product.costRmb === null && product.costPrice === null)
         .map((product) => ({
@@ -2238,7 +2290,11 @@
           '产品标题': product.title || '',
           'SKU数': product.skuCount,
           'TikTok售价': product.salePrice === null ? '' : formatNum(product.salePrice),
-          '来源Url': product.sourceUrl || ''
+          '来源Url': product.sourceUrl || '',
+          'offerId': extractOfferId(product.sourceUrl),
+          '当前重量': product.weightDisplay,
+          '当前推荐等级': product.level || '',
+          '当前下一步动作': displayNextAction(product.nextAction)
         }));
       downloadCsv(`1688-fetch-tasks-${todayString()}.csv`, headers, rows);
     }
