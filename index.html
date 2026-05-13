@@ -803,6 +803,26 @@
         <input id="targetMargin" type="number" min="0" step="1" value="30">
       </div>
       <div class="control">
+        <label for="tkDiscountRate">TK活动折扣比例</label>
+        <input id="tkDiscountRate" type="number" min="0" step="0.01" value="1">
+      </div>
+      <div class="control">
+        <label for="tkMerchantDiscount">商家固定优惠 MYR</label>
+        <input id="tkMerchantDiscount" type="number" min="0" step="0.01" value="0">
+      </div>
+      <div class="control">
+        <label for="tkFullReduction">满减规则 MYR</label>
+        <input id="tkFullReduction" type="text" value="" placeholder="例：100:10,200:25">
+      </div>
+      <div class="control">
+        <label for="claimMultiplier">店小秘认领倍数</label>
+        <input id="claimMultiplier" type="number" min="0.01" step="0.01" value="3">
+      </div>
+      <div class="control">
+        <label for="claimFixedAdd">店小秘固定加价 MYR</label>
+        <input id="claimFixedAdd" type="number" min="0" step="0.01" value="36">
+      </div>
+      <div class="control">
         <label for="costField">备用采购价字段</label>
         <select id="costField">
           <option value="">优先使用店小秘反推成本</option>
@@ -963,6 +983,11 @@
       paymentRate: document.getElementById('paymentRate'),
       otherCost: document.getElementById('otherCost'),
       targetMargin: document.getElementById('targetMargin'),
+      tkDiscountRate: document.getElementById('tkDiscountRate'),
+      tkMerchantDiscount: document.getElementById('tkMerchantDiscount'),
+      tkFullReduction: document.getElementById('tkFullReduction'),
+      claimMultiplier: document.getElementById('claimMultiplier'),
+      claimFixedAdd: document.getElementById('claimFixedAdd'),
       costField: document.getElementById('costField'),
       costTableFile: document.getElementById('costTableFile'),
       loadCostTable: document.getElementById('loadCostTableBtn'),
@@ -1039,6 +1064,11 @@
         paymentRate: (toNumber(els.paymentRate.value) ?? 2) / 100,
         otherCost: toNumber(els.otherCost.value) ?? 0,
         targetMargin: (toNumber(els.targetMargin.value) ?? 30) / 100,
+        tkDiscountRate: toNumber(els.tkDiscountRate.value) ?? 1,
+        tkMerchantDiscount: toNumber(els.tkMerchantDiscount.value) ?? 0,
+        tkFullReductionRules: parseFullReductionRules(els.tkFullReduction.value),
+        claimMultiplier: toNumber(els.claimMultiplier.value) || 3,
+        claimFixedAdd: toNumber(els.claimFixedAdd.value) ?? 36,
         costField: els.costField.value,
         shippingRules: parseShippingRules(els.shippingRules.value)
       };
@@ -1139,6 +1169,29 @@
         .filter(Boolean)
         .sort((a, b) => a.maxKg - b.maxKg);
       return rules.length ? rules : fallback;
+    }
+
+    function parseFullReductionRules(input) {
+      return String(input || '')
+        .split(',')
+        .map((part) => {
+          const [threshold, discount] = part.split(':').map((item) => toNumber(item));
+          return threshold !== null && discount !== null ? { threshold, discount } : null;
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.threshold - b.threshold);
+    }
+
+    function fullReductionDiscount(price, rules) {
+      if (price === null || !rules.length) return 0;
+      return rules.reduce((discount, rule) => price >= rule.threshold ? rule.discount : discount, 0);
+    }
+
+    function calculateRuleTkActivityPrice(claimPrice, config) {
+      if (claimPrice === null) return null;
+      const beforeFullReduction = claimPrice * config.tkDiscountRate - config.tkMerchantDiscount;
+      const fullReduction = fullReductionDiscount(beforeFullReduction, config.tkFullReductionRules);
+      return Math.max(0, beforeFullReduction - fullReduction);
     }
 
     function chooseDefaultCostField(headers) {
@@ -1662,7 +1715,7 @@
     async function handleCostTableParse() {
       const file = els.costTableFile.files && els.costTableFile.files[0];
       if (!file) {
-        els.status.textContent = '请先上传 TK活动后售价表。';
+        els.status.textContent = '请先上传 TK活动后实际售价表；不上传也会按页面活动规则计算。';
         els.status.className = 'status error';
         return;
       }
@@ -1673,7 +1726,7 @@
         state.costMap = buildTkActivityMap(rows);
         recalculateProducts();
         const stats = tkActivityStats(rows, state.products);
-        els.status.textContent = `TK活动价表已读取：总行数 ${stats.totalRows}，成功匹配商品数 ${stats.matchedProducts}，未匹配商品数 ${stats.unmatchedProducts}，缺活动价行数 ${stats.missingPriceRows}${parsed.encoding ? `，识别编码：${parsed.encoding}` : ''}。`;
+        els.status.textContent = `TK活动实际售价表已读取：总行数 ${stats.totalRows}，成功匹配商品数 ${stats.matchedProducts}，未匹配商品数 ${stats.unmatchedProducts}，缺活动价行数 ${stats.missingPriceRows}${parsed.encoding ? `，识别编码：${parsed.encoding}` : ''}。未匹配商品继续按页面活动规则计算。`;
         els.status.className = 'status ok';
       } catch (error) {
         els.status.textContent = error.message || 'TK活动价表解析失败，请另存为 CSV UTF-8 后上传。';
@@ -1818,12 +1871,15 @@
       const highPrice = maxPrice !== null && maxPrice > 100;
       const shippingUsd = extraShippingUsd(weight, config.shippingRules);
       const shippingMyr = shippingUsd === null ? null : shippingUsd * config.exchangeRate;
-      const tkActivityPrice = matchedTkActivity && matchedTkActivity.activityPrice !== null ? matchedTkActivity.activityPrice : null;
+      const claimPrice = priceNums.length ? Math.min(...priceNums) : null;
+      const ruleTkActivityPrice = calculateRuleTkActivityPrice(claimPrice, config);
+      const importedTkActivityPrice = matchedTkActivity && matchedTkActivity.activityPrice !== null ? matchedTkActivity.activityPrice : null;
+      const tkActivityPrice = importedTkActivityPrice !== null ? importedTkActivityPrice : ruleTkActivityPrice;
+      const tkActivityPriceSource = importedTkActivityPrice !== null ? '导入活动价' : ruleTkActivityPrice !== null ? '页面规则计算' : '';
       const salePriceNums = tkActivityPrice !== null ? [tkActivityPrice] : [];
       const salePrice = salePriceNums.length ? Math.min(...salePriceNums) : null;
-      const salePriceRange = localPriceNums.length ? moneyRange(localPrices, product.currency || 'MYR') : moneyRange(prices, product.currency || 'MYR');
-      const claimPrice = priceNums.length ? Math.min(...priceNums) : null;
-      const inferredCostMyr = claimPrice !== null ? Math.max(0, (claimPrice - 36) / 3) : null;
+      const salePriceRange = tkActivityPrice !== null ? `${formatNum(tkActivityPrice)} MYR` : localPriceNums.length ? moneyRange(localPrices, product.currency || 'MYR') : moneyRange(prices, product.currency || 'MYR');
+      const inferredCostMyr = claimPrice !== null ? Math.max(0, (claimPrice - config.claimFixedAdd) / config.claimMultiplier) : null;
       const rowCostRmbValues = product.rows.map((row) => cleanPrice(value(row, 'costRmb'))).filter((n) => n !== null);
       const matchedCostRmb = matchedCost && matchedCost.costRmb !== null ? matchedCost.costRmb : null;
       const costRmb = rowCostRmbValues.length ? Math.min(...rowCostRmbValues) : matchedCostRmb;
@@ -1939,6 +1995,9 @@
         salePriceRange,
         claimPrice,
         tkActivityPrice,
+        tkActivityPriceSource,
+        importedTkActivityPrice,
+        ruleTkActivityPrice,
         matchedTkActivity,
         inferredCostMyr,
         costPrice,
@@ -2303,6 +2362,7 @@
                 ${fact('下一步动作', `<span class="next-action">${escapeHtml(displayNextAction(product.nextAction) || '-')}</span>`, true)}
                 ${fact('利润状态', product.profitStatus)}
                 ${fact('TK活动后售价', product.tkActivityPrice === null ? '-' : `${formatNum(product.tkActivityPrice)} MYR`)}
+                ${fact('TK活动价来源', product.tkActivityPriceSource || '-')}
                 ${fact('店小秘认领价', product.claimPrice === null ? '-' : `${formatNum(product.claimPrice)} MYR`)}
                 ${fact('预估利润', product.estimatedProfit === null ? '-' : `${formatNum(product.estimatedProfit)} MYR`)}
                 ${fact('预估利润率', product.profitMargin === null ? '-' : `${formatNum(product.profitMargin * 100)}%`)}
@@ -2339,6 +2399,7 @@
               <div class="shipping">
                 <div>利润状态：<strong>${escapeHtml(product.profitStatus)}</strong></div>
                 <div>TK活动后售价：<strong>${product.tkActivityPrice === null ? '-' : `${formatNum(product.tkActivityPrice)} MYR`}</strong></div>
+                <div>TK活动价来源：<strong>${escapeHtml(product.tkActivityPriceSource || '-')}</strong></div>
                 <div>反推采购成本：<strong>${product.inferredCostMyr === null ? '-' : `${formatNum(product.inferredCostMyr)} MYR`}</strong></div>
                 <div>1688重量：<strong>${product.sourceWeightKg === null ? '-' : `${formatNum(product.sourceWeightKg, 3)}kg`}</strong></div>
                 <div>预估利润：<strong>${product.estimatedProfit === null ? '-' : `${formatNum(product.estimatedProfit)} MYR`}</strong></div>
@@ -2671,6 +2732,11 @@
       els.paymentRate.addEventListener('input', recalculateProducts);
       els.otherCost.addEventListener('input', recalculateProducts);
       els.targetMargin.addEventListener('input', recalculateProducts);
+      els.tkDiscountRate.addEventListener('input', recalculateProducts);
+      els.tkMerchantDiscount.addEventListener('input', recalculateProducts);
+      els.tkFullReduction.addEventListener('input', recalculateProducts);
+      els.claimMultiplier.addEventListener('input', recalculateProducts);
+      els.claimFixedAdd.addEventListener('input', recalculateProducts);
       els.costField.addEventListener('change', recalculateProducts);
       els.shippingRules.addEventListener('input', recalculateProducts);
       els.loadCostTable.addEventListener('click', handleCostTableParse);
