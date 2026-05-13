@@ -803,9 +803,9 @@
         <input id="targetMargin" type="number" min="0" step="1" value="30">
       </div>
       <div class="control">
-        <label for="costField">采购价字段</label>
+        <label for="costField">备用采购价字段</label>
         <select id="costField">
-          <option value="">导入 CSV 后自动识别</option>
+          <option value="">优先使用店小秘反推成本</option>
         </select>
       </div>
       <div class="control">
@@ -813,12 +813,12 @@
         <input id="shippingRules" type="text" value="0.5:0,1:4.5,1.5:9,2:13.5,2.5:18,3:22.5">
       </div>
       <div class="control">
-        <label for="costTableFile">上传 1688 成本表</label>
+        <label for="costTableFile">上传 TK活动后售价表</label>
         <input id="costTableFile" type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
       </div>
       <div class="export-actions">
-        <button class="btn secondary" id="loadCostTableBtn" type="button">读取1688成本表</button>
-        <button class="btn secondary" id="export1688TasksBtn" type="button">导出1688抓价清单 CSV</button>
+        <button class="btn secondary" id="loadCostTableBtn" type="button">读取TK活动价表</button>
+        <button class="btn secondary" id="export1688TasksBtn" type="button">导出待补TK活动价清单 CSV</button>
         <button class="btn secondary" id="exportActionListBtn" type="button">导出执行清单 CSV</button>
         <button class="btn secondary" id="exportPriorityBtn" type="button">导出优先测试清单 CSV</button>
         <button class="btn secondary" id="exportTestableBtn" type="button">导出可测试清单 CSV</button>
@@ -851,7 +851,7 @@
         <label class="check-pill"><input id="onlyMissing" type="checkbox">只看信息缺失</label>
         <label class="check-pill"><input id="onlyWeightError" type="checkbox">只看疑似重量填错</label>
         <label class="check-pill"><input id="onlyAbnormal" type="checkbox">只看异常项</label>
-        <label class="check-pill"><input id="onlyFetchCost" type="checkbox">只看抓1688成本</label>
+        <label class="check-pill"><input id="onlyFetchCost" type="checkbox">只看待补TK活动价</label>
         <label class="check-pill"><input id="onlyReprice" type="checkbox">只看调价/砍成本</label>
         <label class="check-pill"><input id="onlyPaused" type="checkbox">只看暂缓上架</label>
       </div>
@@ -1011,6 +1011,7 @@
       variant3: ['变种属性值三'],
       price: ['价格(站点币种)', 'Price', 'Original Price', 'price', '零售价（本地币种）'],
       localPrice: ['本地展示价', 'Sale Price', 'Selling Price', 'Display Price'],
+      tkActivityPrice: ['TK活动后售价', 'TK活动价', '活动后售价', '活动价', 'TikTok活动价', 'TikTok活动后售价', 'TK Sale Price', 'Activity Price', 'Campaign Price', 'sale_price'],
       costRmb: ['1688采购价', '采购价RMB', '采购价', '成本价', '1688 Price RMB', 'cost_rmb'],
       stock: ['库存', 'Stock', 'Inventory', 'warehouse_quantity'],
       mainImage: ['主图(url)地址', 'Main Image', 'Main Image URL', 'Image URL', 'main_image', '主图'],
@@ -1340,7 +1341,7 @@
 
     function tagClass(label) {
       if (label === '优先测试' || label === '利润健康' || label === '适合炎热天气' || label === '适合通勤' || label === '适合居家') return 'green';
-      if (label === '重量风险' || label === '信息缺失' || label === '疑似重量填错' || label === '重量异常' || label === '尺寸异常' || label === '价格异常' || label === '可能亏损' || label === '运费吃利润' || label === '利润无法计算') return 'red';
+      if (label === '重量风险' || label === '信息缺失' || label === '疑似重量填错' || label === '重量异常' || label === '尺寸异常' || label === '价格异常' || label === '可能亏损' || label === '运费吃利润' || label === '利润无法计算' || label === '待补TK活动价') return 'red';
       if (label === 'SKU复杂' || label === '价格偏高' || label === '利润偏低') return 'yellow';
       return '';
     }
@@ -1464,7 +1465,7 @@
         const header = decodeXmlText(cell).trim();
         if (header) row[header] = '';
       });
-      return ['title', 'sku', 'price', 'stock', 'mainImage', 'weight', 'length', 'width', 'height', 'sourceUrl', 'shopName', 'currency']
+      return ['title', 'sku', 'price', 'tkActivityPrice', 'stock', 'mainImage', 'weight', 'length', 'width', 'height', 'sourceUrl', 'shopName', 'currency']
         .filter((key) => Boolean(findField(row, key))).length;
     }
 
@@ -1577,6 +1578,7 @@
     }
 
     function findMatchedCost(sourceUrl) {
+      if (!state.costMap || typeof state.costMap.get !== 'function') return null;
       const keys = costMatchKeys(sourceUrl);
       for (const key of keys) {
         const matched = state.costMap.get(key);
@@ -1609,10 +1611,58 @@
       };
     }
 
+    function tkProductKey(title, sourceUrl) {
+      return `${String(title || '').trim()}::${String(sourceUrl || '').trim()}`;
+    }
+
+    function buildTkActivityMap(rows) {
+      const map = { sku: new Map(), product: new Map(), rows };
+      rows.forEach((row) => {
+        const activityPrice = cleanPrice(value(row, 'tkActivityPrice') || value(row, 'localPrice') || value(row, 'price'));
+        const item = {
+          sku: value(row, 'sku'),
+          title: value(row, 'title'),
+          sourceUrl: value(row, 'sourceUrl'),
+          activityPrice
+        };
+        if (item.sku) map.sku.set(item.sku, item);
+        const productKey = tkProductKey(item.title, item.sourceUrl);
+        if (item.title && item.sourceUrl) map.product.set(productKey, item);
+      });
+      return map;
+    }
+
+    function findMatchedTkActivity(product) {
+      if (!state.costMap || !state.costMap.sku) return null;
+      for (const row of product.rows) {
+        const sku = value(row, 'sku');
+        if (sku && state.costMap.sku.has(sku)) return state.costMap.sku.get(sku);
+      }
+      return state.costMap.product.get(tkProductKey(product.title, product.sourceUrl)) || null;
+    }
+
+    function tkActivityStats(rows, products) {
+      const map = buildTkActivityMap(rows);
+      const matchedProducts = products.filter((product) => {
+        for (const row of product.rows) {
+          const sku = value(row, 'sku');
+          if (sku && map.sku.has(sku)) return true;
+        }
+        return map.product.has(tkProductKey(product.title, product.sourceUrl));
+      }).length;
+      const missingPriceRows = rows.filter((row) => cleanPrice(value(row, 'tkActivityPrice') || value(row, 'localPrice') || value(row, 'price')) === null).length;
+      return {
+        totalRows: rows.length,
+        matchedProducts,
+        unmatchedProducts: Math.max(0, products.length - matchedProducts),
+        missingPriceRows
+      };
+    }
+
     async function handleCostTableParse() {
       const file = els.costTableFile.files && els.costTableFile.files[0];
       if (!file) {
-        els.status.textContent = '请先上传 1688 成本表 / 成本匹配表。';
+        els.status.textContent = '请先上传 TK活动后售价表。';
         els.status.className = 'status error';
         return;
       }
@@ -1620,13 +1670,13 @@
         const parsed = await readTableFile(file);
         const rows = (parsed.result?.data || []).filter((row) => Object.values(row).some((cell) => String(cell ?? '').trim()));
         state.costRows = rows;
-        state.costMap = buildCostMap(rows);
+        state.costMap = buildTkActivityMap(rows);
         recalculateProducts();
-        const stats = costTableStats(rows, state.products);
-        els.status.textContent = `1688 成本表已读取：总行数 ${stats.totalRows}，成功匹配商品数 ${stats.matchedProducts}，未匹配商品数 ${stats.unmatchedProducts}，缺价格行数 ${stats.missingPriceRows}，缺重量行数 ${stats.missingWeightRows}${parsed.encoding ? `，识别编码：${parsed.encoding}` : ''}。`;
+        const stats = tkActivityStats(rows, state.products);
+        els.status.textContent = `TK活动价表已读取：总行数 ${stats.totalRows}，成功匹配商品数 ${stats.matchedProducts}，未匹配商品数 ${stats.unmatchedProducts}，缺活动价行数 ${stats.missingPriceRows}${parsed.encoding ? `，识别编码：${parsed.encoding}` : ''}。`;
         els.status.className = 'status ok';
       } catch (error) {
-        els.status.textContent = error.message || '1688 成本表解析失败，请另存为 CSV UTF-8 后上传。';
+        els.status.textContent = error.message || 'TK活动价表解析失败，请另存为 CSV UTF-8 后上传。';
         els.status.className = 'status error';
       }
     }
@@ -1737,6 +1787,7 @@
       const widthValues = product.rows.map((row) => numericField(row, 'width').value);
       const heightValues = product.rows.map((row) => numericField(row, 'height').value);
       const matchedCost = findMatchedCost(product.sourceUrl);
+      const matchedTkActivity = findMatchedTkActivity(product);
       const sourceWeightValues = product.rows.map((row) => normalizeSourceWeightKg(row).value).filter((n) => n !== null);
       const sourceWeightKg = sourceWeightValues.length ? Math.max(...sourceWeightValues) : matchedCost ? matchedCost.sourceWeightKg : null;
       if (!weightValues.some((n) => n !== null) && sourceWeightKg !== null) {
@@ -1767,9 +1818,12 @@
       const highPrice = maxPrice !== null && maxPrice > 100;
       const shippingUsd = extraShippingUsd(weight, config.shippingRules);
       const shippingMyr = shippingUsd === null ? null : shippingUsd * config.exchangeRate;
-      const salePriceNums = localPriceNums.length ? localPriceNums : priceNums;
+      const tkActivityPrice = matchedTkActivity && matchedTkActivity.activityPrice !== null ? matchedTkActivity.activityPrice : null;
+      const salePriceNums = tkActivityPrice !== null ? [tkActivityPrice] : [];
       const salePrice = salePriceNums.length ? Math.min(...salePriceNums) : null;
       const salePriceRange = localPriceNums.length ? moneyRange(localPrices, product.currency || 'MYR') : moneyRange(prices, product.currency || 'MYR');
+      const claimPrice = priceNums.length ? Math.min(...priceNums) : null;
+      const inferredCostMyr = claimPrice !== null ? Math.max(0, (claimPrice - 36) / 3) : null;
       const rowCostRmbValues = product.rows.map((row) => cleanPrice(value(row, 'costRmb'))).filter((n) => n !== null);
       const matchedCostRmb = matchedCost && matchedCost.costRmb !== null ? matchedCost.costRmb : null;
       const costRmb = rowCostRmbValues.length ? Math.min(...rowCostRmbValues) : matchedCostRmb;
@@ -1778,8 +1832,8 @@
       const totalCostRmb = costRmb !== null ? costRmb + (sourceShippingRmb || 0) : null;
       const costMyrFromRmb = totalCostRmb !== null ? totalCostRmb * config.rmbRate : null;
       const costValues = config.costField ? product.rows.map((row) => cleanPrice(row[config.costField])).filter((n) => n !== null) : [];
-      const costPrice = costMyrFromRmb !== null ? costMyrFromRmb : costValues.length ? Math.min(...costValues) : null;
-      const costSource = costMyrFromRmb !== null ? '1688 RMB' : costPrice !== null ? 'MYR字段' : '';
+      const costPrice = inferredCostMyr !== null ? inferredCostMyr : costMyrFromRmb !== null ? costMyrFromRmb : costValues.length ? Math.min(...costValues) : null;
+      const costSource = inferredCostMyr !== null ? '店小秘反推' : costMyrFromRmb !== null ? '1688 RMB' : costPrice !== null ? 'MYR字段' : '';
       const profitCanCalculate = salePrice !== null && costPrice !== null;
       const platformFee = salePrice !== null ? salePrice * config.commissionRate : null;
       const paymentFee = salePrice !== null ? salePrice * config.paymentRate : null;
@@ -1802,10 +1856,11 @@
       const mainImageMissing = !hasMainImage;
       const sourceMissing = hasSourceField && !hasSource;
       const priceMissing = !hasPrice;
+      const tkActivityPriceMissing = tkActivityPrice === null;
       const costMissing = costPrice === null;
       const skuTooMany = skuCount > 8;
       const overweight = !weightAnomaly && weight > 0.5;
-      const hardRisk = profitLoss || profitLow || weightAnomaly || suspectedWeightError || dimensionAnomaly || priceAnomaly || mainImageMissing || sourceMissing || priceMissing || costMissing || skuTooMany || freightEatsProfit;
+      const hardRisk = profitLoss || profitLow || weightAnomaly || suspectedWeightError || dimensionAnomaly || priceAnomaly || mainImageMissing || sourceMissing || priceMissing || tkActivityPriceMissing || costMissing || skuTooMany || freightEatsProfit;
       const softOptimization = titleQuality.issues.length > 0 || suspectedGramWeight || highPrice || shippingProfitRisk || overweight;
       const hasAnyAbnormal = hardRisk;
 
@@ -1822,6 +1877,7 @@
       if (profitLoss) tags.push('可能亏损');
       if (profitLow) tags.push('利润偏低');
       if (profitUnknown) tags.push('利润无法计算');
+      if (tkActivityPriceMissing) tags.push('待补TK活动价');
       if (freightEatsProfit) tags.push('运费吃利润');
       if (summerMatch) tags.push('适合炎热天气');
       if (hasAnyKeyword(text, COMMUTE_KEYWORDS)) tags.push('适合通勤');
@@ -1865,6 +1921,9 @@
       if (weightAnomaly) {
         level = score >= 60 ? '可测试但需检查' : '暂缓上架';
       }
+      if (tkActivityPriceMissing && level === '优先测试') {
+        level = '可测试但需检查';
+      }
       if (profitLoss || (estimatedProfit !== null && estimatedProfit < 0)) {
         level = '暂缓上架';
       }
@@ -1878,6 +1937,10 @@
         localPriceRange: moneyRange(localPrices, product.currency),
         salePrice,
         salePriceRange,
+        claimPrice,
+        tkActivityPrice,
+        matchedTkActivity,
+        inferredCostMyr,
         costPrice,
         costRmb,
         totalCostRmb,
@@ -1918,6 +1981,7 @@
         mainImageMissing,
         sourceMissing,
         priceMissing,
+        tkActivityPriceMissing,
         costMissing,
         skuTooMany,
         overweight,
@@ -1935,6 +1999,7 @@
 
     function handlingAdvice(product) {
       if (product.profitLoss) return '预估利润为负，不建议上架，除非用于引流或重新定价。';
+      if (product.tkActivityPriceMissing) return '缺 TK 活动后实际售价，先补活动价后再判断利润和优先级。';
       if (product.profitUnknown && product.salePrice !== null && product.costPrice === null) return '采购价缺失，利润无法计算。';
       if (product.profitUnknown && product.salePrice === null) return '售价缺失，利润无法计算。';
       if (product.profitUnknown) return '采购价缺失，利润无法计算。';
@@ -1951,7 +2016,7 @@
     // Decision pipeline: turn SKU, cost, logistics, and content checks into operator actions.
     function decideNextAction(product) {
       if (product.profitLoss || (product.estimatedProfit !== null && product.estimatedProfit < 0)) return '暂缓上架';
-      if (product.sourceUrl && product.costPrice === null) return '待抓1688成本';
+      if (product.tkActivityPriceMissing) return '待补TK活动价';
       if (product.mainImageMissing || product.priceMissing || product.sourceMissing) return '补资料';
       if (product.weightAnomaly || product.dimensionAnomaly || product.suspectedWeightError) return '复核重量尺寸';
       if (product.profitLow || product.freightEatsProfit) return '调价/砍成本';
@@ -1961,7 +2026,7 @@
     }
 
     function displayNextAction(action) {
-      return action === '待抓1688成本' ? '抓1688成本' : action || '';
+      return action || '';
     }
 
     function suggestedMinSalePrice(product) {
@@ -1981,7 +2046,7 @@
         `产品标题：${product.title || '-'}`,
         `SKU：${skuList || '-'}`,
         `来源Url：${product.sourceUrl || '-'}`,
-        `采购价：${product.costRmb === null ? '-' : `${formatNum(product.costRmb)} RMB`} / ${product.costMyr === null ? '-' : `${formatNum(product.costMyr)} MYR`}`,
+        `采购价：${product.costMyr === null ? '-' : `${formatNum(product.costMyr)} MYR`}（${product.costSource || '-'}）`,
         `售价：${product.salePrice === null ? '-' : `${formatNum(product.salePrice)} MYR`}`,
         `利润率：${product.profitMargin === null ? '-' : `${formatNum(product.profitMargin * 100)}%`}`,
         `下一步动作：${displayNextAction(product.nextAction) || '-'}`,
@@ -1991,7 +2056,7 @@
     }
 
     function buildDecisionPipeline(products) {
-      const actions = ['优先测试', '可测复核', '待抓1688成本', '补资料', '复核重量尺寸', '调价/砍成本', '暂缓上架'];
+      const actions = ['优先测试', '可测复核', '待补TK活动价', '补资料', '复核重量尺寸', '调价/砍成本', '暂缓上架'];
       return actions.map((action) => ({
         action,
         count: products.filter((product) => product.nextAction === action).length
@@ -2001,7 +2066,7 @@
     function decisionClass(action) {
       if (action === '优先测试') return 'priority';
       if (action === '可测复核') return 'review';
-      if (action === '待抓1688成本') return 'cost';
+      if (action === '待补TK活动价') return 'cost';
       if (action === '补资料') return 'fix';
       if (action === '复核重量尺寸') return 'weight';
       if (action === '调价/砍成本') return 'price';
@@ -2039,6 +2104,7 @@
       }
       items.push(product.shippingUsd && product.shippingUsd > 0 ? `运费会增加 ${formatNum(product.shippingUsd)} USD。` : '暂无额外超重运费。');
       if (product.shippingProfitRisk) items.push('利润可能被额外运费吃掉。');
+      if (product.tkActivityPriceMissing) items.push('缺 TK 活动后实际售价，需导入活动价表后再判断利润。');
       if (product.profitUnknown && product.salePrice !== null && product.costPrice === null) items.push('采购价缺失，利润无法计算。');
       if (product.profitUnknown && product.salePrice === null) items.push('售价缺失，利润无法计算。');
       if (product.profitLoss) items.push('预估利润为负，不建议上架，除非用于引流或重新定价。');
@@ -2136,7 +2202,7 @@
         if (els.missing.checked && !product.missingInfo) return false;
         if (els.weightError.checked && !product.suspectedWeightError) return false;
         if (els.abnormal.checked && !product.abnormal) return false;
-        if (els.fetchCost.checked && product.nextAction !== '待抓1688成本') return false;
+        if (els.fetchCost.checked && product.nextAction !== '待补TK活动价') return false;
         if (els.reprice.checked && product.nextAction !== '调价/砍成本') return false;
         if (els.paused.checked && product.nextAction !== '暂缓上架') return false;
         if (!query) return true;
@@ -2216,7 +2282,7 @@
                 ${copyButton('复制标题', product.title)}
                 ${copyButton('复制 SKU', skuList)}
                 ${copyButton('复制来源链接', product.sourceUrl)}
-                ${copyButton('复制价格', product.localPriceRange !== '-' ? product.localPriceRange : product.priceRange)}
+                ${copyButton('复制价格', product.tkActivityPrice === null ? product.priceRange : `${formatNum(product.tkActivityPrice)} MYR`)}
                 ${copyButton('复制重量', product.weight === null ? '' : `${formatNum(product.weight, 3)}kg`)}
                 ${copyButton('商品详情复制包', productDetailPackage(product))}
               </div>
@@ -2236,11 +2302,13 @@
                 ${fact('推荐等级', product.level)}
                 ${fact('下一步动作', `<span class="next-action">${escapeHtml(displayNextAction(product.nextAction) || '-')}</span>`, true)}
                 ${fact('利润状态', product.profitStatus)}
+                ${fact('TK活动后售价', product.tkActivityPrice === null ? '-' : `${formatNum(product.tkActivityPrice)} MYR`)}
+                ${fact('店小秘认领价', product.claimPrice === null ? '-' : `${formatNum(product.claimPrice)} MYR`)}
                 ${fact('预估利润', product.estimatedProfit === null ? '-' : `${formatNum(product.estimatedProfit)} MYR`)}
                 ${fact('预估利润率', product.profitMargin === null ? '-' : `${formatNum(product.profitMargin * 100)}%`)}
                 ${fact('建议最低售价', suggestedPrice === null ? '-' : `${formatNum(suggestedPrice)} MYR`)}
-                ${fact('1688采购价', product.costRmb === null ? '-' : `${formatNum(product.costRmb)} RMB`)}
-                ${fact('折算采购成本', product.costMyr === null ? '-' : `${formatNum(product.costMyr)} MYR`)}
+                ${fact('反推采购成本', product.inferredCostMyr === null ? '-' : `${formatNum(product.inferredCostMyr)} MYR`)}
+                ${fact('采购成本来源', product.costSource || '-')}
                 ${fact('1688国内运费', product.sourceShippingRmb === null ? '-' : `${formatNum(product.sourceShippingRmb)} RMB`)}
                 ${fact('1688重量', product.sourceWeightKg === null ? '-' : `${formatNum(product.sourceWeightKg, 3)}kg`)}
                 ${fact('额外运费 MYR', product.shippingMyr === null ? '-' : `${formatNum(product.shippingMyr)} MYR`)}
@@ -2270,8 +2338,8 @@
               </div>
               <div class="shipping">
                 <div>利润状态：<strong>${escapeHtml(product.profitStatus)}</strong></div>
-                <div>1688采购价：<strong>${product.costRmb === null ? '-' : `${formatNum(product.costRmb)} RMB`}</strong></div>
-                <div>折算采购成本：<strong>${product.costMyr === null ? '-' : `${formatNum(product.costMyr)} MYR`}</strong></div>
+                <div>TK活动后售价：<strong>${product.tkActivityPrice === null ? '-' : `${formatNum(product.tkActivityPrice)} MYR`}</strong></div>
+                <div>反推采购成本：<strong>${product.inferredCostMyr === null ? '-' : `${formatNum(product.inferredCostMyr)} MYR`}</strong></div>
                 <div>1688重量：<strong>${product.sourceWeightKg === null ? '-' : `${formatNum(product.sourceWeightKg, 3)}kg`}</strong></div>
                 <div>预估利润：<strong>${product.estimatedProfit === null ? '-' : `${formatNum(product.estimatedProfit)} MYR`}</strong></div>
                 <div>预估利润率：<strong>${product.profitMargin === null ? '-' : `${formatNum(product.profitMargin * 100)}%`}</strong></div>
@@ -2369,16 +2437,15 @@
     }
 
     function exportPriorityProducts() {
-      const headers = ['产品id', '产品标题', 'SKU 数', '售价区间', '1688采购价 RMB', '采购成本 MYR', '重量', '额外运费 MYR', '预估利润', '预估利润率', '推荐等级', '下一步动作', '来源Url', '主图地址'];
+      const headers = ['产品id', '产品标题', 'SKU 数', 'TK活动后售价', '反推采购成本 MYR', '重量', '额外运费 MYR', '预估利润', '预估利润率', '推荐等级', '下一步动作', '来源Url', '主图地址'];
       const rows = state.products
         .filter((product) => product.level === '优先测试')
         .map((product) => ({
           '产品id': product.productId || '',
           '产品标题': product.title || '',
           'SKU 数': product.skuCount,
-          '售价区间': product.salePriceRange || '',
-          '1688采购价 RMB': product.costRmb === null ? '' : formatNum(product.costRmb),
-          '采购成本 MYR': product.costMyr === null ? '' : formatNum(product.costMyr),
+          'TK活动后售价': product.tkActivityPrice === null ? '' : formatNum(product.tkActivityPrice),
+          '反推采购成本 MYR': product.costMyr === null ? '' : formatNum(product.costMyr),
           '重量': product.weightDisplay,
           '额外运费 MYR': product.shippingMyr === null ? '' : formatNum(product.shippingMyr),
           '预估利润': product.estimatedProfit === null ? '' : formatNum(product.estimatedProfit),
@@ -2392,16 +2459,15 @@
     }
 
     function exportTestableProducts() {
-      const headers = ['产品id', '产品标题', 'SKU 数', '售价区间', '1688采购价 RMB', '采购成本 MYR', '重量', '额外运费 MYR', '预估利润', '预估利润率', '推荐等级', '下一步动作', '处理建议', '来源Url', '主图地址'];
+      const headers = ['产品id', '产品标题', 'SKU 数', 'TK活动后售价', '反推采购成本 MYR', '重量', '额外运费 MYR', '预估利润', '预估利润率', '推荐等级', '下一步动作', '处理建议', '来源Url', '主图地址'];
       const rows = state.products
         .filter((product) => product.level === '优先测试' || product.level === '可测试但需检查')
         .map((product) => ({
           '产品id': product.productId || '',
           '产品标题': product.title || '',
           'SKU 数': product.skuCount,
-          '售价区间': product.salePriceRange || '',
-          '1688采购价 RMB': product.costRmb === null ? '' : formatNum(product.costRmb),
-          '采购成本 MYR': product.costMyr === null ? '' : formatNum(product.costMyr),
+          'TK活动后售价': product.tkActivityPrice === null ? '' : formatNum(product.tkActivityPrice),
+          '反推采购成本 MYR': product.costMyr === null ? '' : formatNum(product.costMyr),
           '重量': product.weightDisplay,
           '额外运费 MYR': product.shippingMyr === null ? '' : formatNum(product.shippingMyr),
           '预估利润': product.estimatedProfit === null ? '' : formatNum(product.estimatedProfit),
@@ -2416,7 +2482,7 @@
     }
 
     function exportRiskyProducts() {
-      const headers = ['产品id', '产品标题', '问题标签', '重量', '尺寸', '售价', '1688采购价 RMB', '采购成本 MYR', '额外运费 MYR', '预估利润', '预估利润率', '下一步动作', '处理建议', '来源Url'];
+      const headers = ['产品id', '产品标题', '问题标签', '重量', '尺寸', 'TK活动后售价', '反推采购成本 MYR', '额外运费 MYR', '预估利润', '预估利润率', '下一步动作', '处理建议', '来源Url'];
       const rows = state.products
         .filter((product) => product.hardRisk)
         .map((product) => ({
@@ -2425,9 +2491,8 @@
           '问题标签': product.tags.filter((tag) => tagClass(tag) !== 'green').join('、'),
           '重量': product.weightDisplay,
           '尺寸': product.sizeDisplay,
-          '售价': product.salePrice === null ? '' : formatNum(product.salePrice),
-          '1688采购价 RMB': product.costRmb === null ? '' : formatNum(product.costRmb),
-          '采购成本 MYR': product.costMyr === null ? '' : formatNum(product.costMyr),
+          'TK活动后售价': product.tkActivityPrice === null ? '' : formatNum(product.tkActivityPrice),
+          '反推采购成本 MYR': product.costMyr === null ? '' : formatNum(product.costMyr),
           '额外运费 MYR': product.shippingMyr === null ? '' : formatNum(product.shippingMyr),
           '预估利润': product.estimatedProfit === null ? '' : formatNum(product.estimatedProfit),
           '预估利润率': product.profitMargin === null ? '' : `${formatNum(product.profitMargin * 100)}%`,
@@ -2439,26 +2504,26 @@
     }
 
     function export1688FetchTasks() {
-      const headers = ['产品id', '产品标题', 'SKU数', 'TikTok售价', '来源Url', 'offerId', '当前重量', '当前推荐等级', '当前下一步动作'];
+      const headers = ['产品id', '产品标题', 'SKU数', '认领价MYR', '来源Url', 'offerId', '当前重量', '当前推荐等级', '当前下一步动作'];
       const rows = state.products
-        .filter((product) => product.sourceUrl && product.costRmb === null && product.costPrice === null)
+        .filter((product) => product.nextAction === '待补TK活动价')
         .map((product) => ({
           '产品id': product.productId || '',
           '产品标题': product.title || '',
           'SKU数': product.skuCount,
-          'TikTok售价': product.salePrice === null ? '' : formatNum(product.salePrice),
+          '认领价MYR': product.claimPrice === null ? '' : formatNum(product.claimPrice),
           '来源Url': product.sourceUrl || '',
           'offerId': extractOfferId(product.sourceUrl),
           '当前重量': product.weightDisplay,
           '当前推荐等级': product.level || '',
           '当前下一步动作': displayNextAction(product.nextAction)
         }));
-      downloadCsv(`1688-fetch-tasks-${todayString()}.csv`, headers, rows);
+      downloadCsv(`tk-activity-price-tasks-${todayString()}.csv`, headers, rows);
     }
 
     function exportActionList() {
-      const actionOrder = ['待抓1688成本', '优先测试', '调价/砍成本', '复核重量尺寸', '暂缓上架'];
-      const headers = ['执行分组', '产品id', '产品标题', 'SKU数', 'TikTok售价', '采购价 RMB', '采购成本 MYR', '重量', '利润率', '建议最低售价 MYR', '当前推荐等级', '下一步动作', '处理建议', '来源Url', 'offerId'];
+      const actionOrder = ['待补TK活动价', '优先测试', '调价/砍成本', '复核重量尺寸', '暂缓上架'];
+      const headers = ['执行分组', '产品id', '产品标题', 'SKU数', 'TK活动后售价', '认领价MYR', '反推采购成本 MYR', '重量', '利润率', '建议最低售价 MYR', '当前推荐等级', '下一步动作', '处理建议', '来源Url', 'offerId'];
       const rows = actionOrder.flatMap((action) => state.products
         .filter((product) => product.nextAction === action)
         .map((product) => {
@@ -2468,9 +2533,9 @@
             '产品id': product.productId || '',
             '产品标题': product.title || '',
             'SKU数': product.skuCount,
-            'TikTok售价': product.salePrice === null ? '' : formatNum(product.salePrice),
-            '采购价 RMB': product.costRmb === null ? '' : formatNum(product.costRmb),
-            '采购成本 MYR': product.costMyr === null ? '' : formatNum(product.costMyr),
+            'TK活动后售价': product.tkActivityPrice === null ? '' : formatNum(product.tkActivityPrice),
+            '认领价MYR': product.claimPrice === null ? '' : formatNum(product.claimPrice),
+            '反推采购成本 MYR': product.costMyr === null ? '' : formatNum(product.costMyr),
             '重量': product.weightDisplay,
             '利润率': product.profitMargin === null ? '' : `${formatNum(product.profitMargin * 100)}%`,
             '建议最低售价 MYR': suggestedPrice === null ? '' : formatNum(suggestedPrice),
